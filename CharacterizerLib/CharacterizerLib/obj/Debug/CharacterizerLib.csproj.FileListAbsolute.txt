@@ -1,0 +1,5 @@
+C:\Users\Developr\Documents\SharpDevelop Projects\CharacterizerLib\CharacterizerLib\bin\Debug\CharacterizerLib.dll
+C:\Users\Developr\Documents\SharpDevelop Projects\CharacterizerLib\CharacterizerLib\bin\Debug\CharacterizerLib.pdb
+C:\Users\Developr\Documents\SharpDevelop Projects\CharacterizerLib\CharacterizerLib\obj\Debug\CharacterizerLib.csprojResolveAssemblyReference.cache
+C:\Users\Developr\Documents\SharpDevelop Projects\CharacterizerLib\CharacterizerLib\obj\Debug\CharacterizerLib.dll
+C:\Users\Developr\Documents\SharpDevelop Projects\CharacterizerLib\CharacterizerLib\obj\Debug\CharacterizerLib.pdb
