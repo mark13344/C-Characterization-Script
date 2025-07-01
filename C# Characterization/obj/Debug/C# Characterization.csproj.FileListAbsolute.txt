@@ -1,5 +1,0 @@
-C:\Users\Developr\Documents\SharpDevelop Projects\C# Characterization\C# Characterization\obj\Debug\C# Characterization.csprojResolveAssemblyReference.cache
-C:\Users\Developr\Documents\SharpDevelop Projects\C# Characterization\C# Characterization\bin\Debug\C# Characterization.exe
-C:\Users\Developr\Documents\SharpDevelop Projects\C# Characterization\C# Characterization\bin\Debug\C# Characterization.pdb
-C:\Users\Developr\Documents\SharpDevelop Projects\C# Characterization\C# Characterization\obj\Debug\C# Characterization.exe
-C:\Users\Developr\Documents\SharpDevelop Projects\C# Characterization\C# Characterization\obj\Debug\C# Characterization.pdb
