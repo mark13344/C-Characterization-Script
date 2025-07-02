@@ -3,3 +3,8 @@ C:\Users\Developr\Documents\SharpDevelop Projects\CharacterizerLib\Characterizer
 C:\Users\Developr\Documents\SharpDevelop Projects\CharacterizerLib\CharacterizerLib\obj\Debug\CharacterizerLib.csprojResolveAssemblyReference.cache
 C:\Users\Developr\Documents\SharpDevelop Projects\CharacterizerLib\CharacterizerLib\obj\Debug\CharacterizerLib.dll
 C:\Users\Developr\Documents\SharpDevelop Projects\CharacterizerLib\CharacterizerLib\obj\Debug\CharacterizerLib.pdb
+C:\Users\Mark\Documents\GitHub\C-Characterization-Script\CharacterizerLib\CharacterizerLib\bin\Debug\CharacterizerLib.dll
+C:\Users\Mark\Documents\GitHub\C-Characterization-Script\CharacterizerLib\CharacterizerLib\bin\Debug\CharacterizerLib.pdb
+C:\Users\Mark\Documents\GitHub\C-Characterization-Script\CharacterizerLib\CharacterizerLib\obj\Debug\CharacterizerLib.csprojResolveAssemblyReference.cache
+C:\Users\Mark\Documents\GitHub\C-Characterization-Script\CharacterizerLib\CharacterizerLib\obj\Debug\CharacterizerLib.dll
+C:\Users\Mark\Documents\GitHub\C-Characterization-Script\CharacterizerLib\CharacterizerLib\obj\Debug\CharacterizerLib.pdb

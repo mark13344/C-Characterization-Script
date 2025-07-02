@@ -134,6 +134,8 @@ public class Characterizer {
 				
 				Processes.Add(proc);
 			} 
+			
+			ProcessCount = Processes.Count;
 		}
 		
 
