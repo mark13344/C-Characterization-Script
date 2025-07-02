@@ -31,7 +31,6 @@ public class Characterizer {
 		Console.ReadLine();
 	}*/
 	
-	
 	public class BaseInfo
 	{
 		public string Hostname { get; private set;}
@@ -230,6 +229,12 @@ public class Characterizer {
 		
 		public ServiceInfo(){
 			Services = new List<ServiceDetails>();
+			
+			Refresh();
+		}
+		
+		public void Refresh(){
+			
 			try{
 				ServiceController[] service = ServiceController.GetServices();
 				
@@ -289,7 +294,99 @@ public class Characterizer {
 			public string Description { set; get;}
 		}
 		
-	}
+		}
+		
+	public class UserInfo {
+			
+			public List<UserDetails> Users { get; private set; }
+			public int UsersCount { get; private set; }
+			
+			public UserInfo(){
+				Users = new List<UserDetails>();
+				CollectUsers();
+			}
+			
+			public void refresh(){
+				Users.Clear();
+				CollectUsers();
+			}
+			
+			private void CollectUsers(){
+				int entriesRead, totalEnteries, resumeHandle = 0;
+				IntPtr buffer = IntPtr.Zero;
+					
+				int status = NetUserEnum(null, 0, 2, out buffer, -1, out entriesRead, out totalEnteries, ref resumeHandle);
+				if (status == 0 && buffer != IntPtr.Zero){
+					IntPtr currentPtr = buffer;
+					int structsize = Marshal.SizeOf(typeof(USER_INFO_0));
+					
+					for (int i = 0; i < entriesRead; i++){
+						USER_INFO_0 user = (USER_INFO_0)Marshal.PtrToStructure(currentPtr, typeof(USER_INFO_0));
+						var detailed = GetUserDetailsFromWMI(user.usri0_name);
+						Users.Add(detailed);
+						currentPtr = new IntPtr(currentPtr.ToInt64() + structsize);
+					}
+				 	UsersCount = Users.Count;
+					NetApiBufferFree(buffer);
+				}
+			}
+			
+			
+			private UserDetails GetUserDetailsFromWMI(string username){
+				try{
+					string query = "SELECT * FROM Win32_UserAccount WHERE Name = '" + username + "' AND LocalAccount = TRUE";
+					using (ManagementObjectSearcher searcher = new ManagementObjectSearcher(query)){
+						foreach (ManagementObject obj in searcher.Get()){
+							return new UserDetails{
+								Username = username,
+								Domain = obj["Domain"] != null ? obj["Domain"].ToString() : "N/A",
+								SID = obj["SID"] != null ? obj["SID"].ToString() : "N/A",
+								Description = obj["Description"] != null ? obj["Domain"].ToString() : "",
+								Disabled = obj["Disabled"] != null && (bool)obj["Disabled"],
+								LockOut = obj["Lockout"] != null && (bool)obj["Lockout"],
+								PasswordRequired = obj["PasswordRequired"] != null && (bool)obj["PasswordRequired"],
+								PasswordChangeable = obj["PasswordChangeable"] != null && (bool)obj["PasswordRequired"],
+								AccountType = (bool)obj["LocalAccount"] ? "Local" : "Domain"
+							};
+						}
+					}
+				} catch {
+				
+				}
+				
+				return new UserDetails { Username = username };
+			}
+			
+			
+			
+			
+			public class UserDetails {
+				public string Username { get; set; }
+				public string Domain { get; set; }
+				public string SID { get; set; }
+				public string Description { get; set; }
+				public bool Disabled { get; set; }
+				public bool LockOut { get; set; }
+				public bool PasswordRequired { get; set; }
+				public bool PasswordChangeable { get; set; }
+				public string AccountType { get; set; }
+			}
+			
+			[DllImport("Netapi32.dll", CharSet = CharSet.Unicode)]
+			private static extern int NetUserEnum(string servername, int level, int filter, out IntPtr bufptr, int prefmaxlen, out int entriesread, out int totalentries, ref int resume_handle);
+			
+			[DllImport("Netapi32.dll")]
+			private static extern int NetApiBufferFree(IntPtr Buffer);
+			
+			[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+			private struct USER_INFO_0
+			{
+				[MarshalAs(UnmanagedType.LPWStr)]
+				public string usri0_name;
+			}
+		}
+
+	
 	}
 }
 
