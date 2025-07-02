@@ -19,6 +19,7 @@ using System.Runtime.InteropServices;
 using System.ServiceProcess;
 using System.Text;
 using Microsoft.Win32;
+using System.Security.Principal;
 
 
 
@@ -322,7 +323,7 @@ public class Characterizer {
 					
 					for (int i = 0; i < entriesRead; i++){
 						USER_INFO_0 user = (USER_INFO_0)Marshal.PtrToStructure(currentPtr, typeof(USER_INFO_0));
-						var detailed = GetUserDetailsFromWMI(user.usri0_name);
+						var detailed = GetUserDetails(user.usri0_name);
 						Users.Add(detailed);
 						currentPtr = new IntPtr(currentPtr.ToInt64() + structsize);
 					}
@@ -331,45 +332,87 @@ public class Characterizer {
 				}
 			}
 			
-			
-			private UserDetails GetUserDetailsFromWMI(string username){
-				try{
-					string query = "SELECT * FROM Win32_UserAccount WHERE Name = '" + username + "' AND LocalAccount = TRUE";
-					using (ManagementObjectSearcher searcher = new ManagementObjectSearcher(query)){
-						foreach (ManagementObject obj in searcher.Get()){
-							return new UserDetails{
-								Username = username,
-								Domain = obj["Domain"] != null ? obj["Domain"].ToString() : "N/A",
-								SID = obj["SID"] != null ? obj["SID"].ToString() : "N/A",
-								Description = obj["Description"] != null ? obj["Domain"].ToString() : "",
-								Disabled = obj["Disabled"] != null && (bool)obj["Disabled"],
-								LockOut = obj["Lockout"] != null && (bool)obj["Lockout"],
-								PasswordRequired = obj["PasswordRequired"] != null && (bool)obj["PasswordRequired"],
-								PasswordChangeable = obj["PasswordChangeable"] != null && (bool)obj["PasswordRequired"],
-								AccountType = (bool)obj["LocalAccount"] ? "Local" : "Domain"
-							};
-						}
-					}
-				} catch {
+			private UserDetails GetUserDetails(string username)
+			{
+				IntPtr buffer  = IntPtr.Zero;
+				int status = NetUserGetInfo(null, username, 2, out buffer);
 				
+				if (status == 0 && buffer != IntPtr.Zero)
+				{
+					USER_INFO_2 info = (USER_INFO_2)Marshal.PtrToStructure(buffer, typeof(USER_INFO_2));
+					
+					var user = new UserDetails
+					{
+						Username = info.usri2_name,
+						PasswordAge = info.usri2_priv,
+						Comments = info.usri2_comment,
+						Flag = info.usri2_flags,
+						AuthFlags = info.usri2_auth_flags,
+						FullName = info.usri2_full_name,
+		                UserComment = info.usri2_usr_comment,
+		                Workstations = info.usri2_workstations,
+		                LastLogon = info.usri2_last_logon > 0 ? new DateTime(1970,1,1).AddSeconds(info.usri2_last_logon).ToLocalTime().ToString("g"): "Never",
+		                LastLogoff = info.usri2_last_logoff > 0 ? new DateTime(1970,1,1).AddSeconds(info.usri2_last_logoff).ToLocalTime().ToString("g"): "Never",
+		                AccountExpires = info.usri2_acct_expires,
+		                MaxStorage = info.usri2_max_storage,
+		                BadPasswordCount = info.usri2_bad_pw_count,
+		                LogonCount = info.usri2_num_logons,
+		                LogonServer = info.usri2_logon_server,
+		                SID = GetUserSid(username),
+		                isEnabled = (info.usri2_flags & 0x0020) == 0,
+		                passwordExpires = (info.usri2_flags & 0x10000) == 0,
+		                canChangePassword = (info.usri2_flags & 0x0040) == 0
+					};
+					
+					NetApiBufferFree(buffer);
+					return user;
 				}
 				
 				return new UserDetails { Username = username };
+				
 			}
+			
+			public static string GetUserSid(string username)
+			{
+				try {
+					System.Security.Principal.NTAccount account = new System.Security.Principal.NTAccount(username);
+					SecurityIdentifier sid = (SecurityIdentifier)account.Translate(typeof(SecurityIdentifier));
+					return sid.Value;
+				} catch (Exception) {
+					
+					return "SID Lookup Failed";
+				}
+				
+			}
+
+			
 			
 			
 			
 			
 			public class UserDetails {
 				public string Username { get; set; }
-				public string Domain { get; set; }
 				public string SID { get; set; }
-				public string Description { get; set; }
-				public bool Disabled { get; set; }
-				public bool LockOut { get; set; }
-				public bool PasswordRequired { get; set; }
-				public bool PasswordChangeable { get; set; }
-				public string AccountType { get; set; }
+				public int PasswordAge { get; set; }
+				public int Privilege { get; set; }
+				public string Comments { get; set; }
+				public int Flag { get; set; }
+				public int AuthFlags { get; set; }
+				public string FullName { get; set; }
+				public string UserComment { get; set; }
+				public string Workstations { get; set; }
+				public string LastLogon { get; set; }
+				public string LastLogoff { get; set; }
+				public int AccountExpires { get; set; }
+				public int MaxStorage { get; set; }
+				public int BadPasswordCount { get; set; }
+				public int LogonCount { get; set; }
+				public string LogonServer { get; set; }
+				public bool isEnabled { get; set; }
+				public bool passwordRequired { get; set; }
+				public bool passwordExpires { get; set; }
+				public bool canChangePassword { get; set; }
+				
 			}
 			
 			[DllImport("Netapi32.dll", CharSet = CharSet.Unicode)]
@@ -383,6 +426,56 @@ public class Characterizer {
 			{
 				[MarshalAs(UnmanagedType.LPWStr)]
 				public string usri0_name;
+			}
+			
+			
+			[DllImport("Netapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+			private static extern int NetUserGetInfo(
+				[MarshalAs(UnmanagedType.LPWStr)] string servername,
+				[MarshalAs(UnmanagedType.LPWStr)] string username,
+				int level,
+				out IntPtr bufptr);
+			
+			[DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+			public static extern bool LookupAccountName(
+				string lpSystemName,
+				string lpAccountName,
+				byte[] Sid,
+				ref int cbSid,
+				StringBuilder ReferencedDomainName,
+				ref int cchReferencedDomainName,
+				out int peUse);
+			
+			[DllImport("advapi32.dll", SetLastError = true)]
+			public static extern bool ConvertSidToStringSid(IntPtr pSid, out IntPtr ptrSidstr);
+			
+			[DllImport("kernel32.dll", SetLastError = true)]
+			public static extern IntPtr LocalFree(IntPtr hMem);
+			
+			[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+			private struct USER_INFO_2
+			{
+				public string usri2_name;
+		        public string usri2_password;
+		        public int usri2_password_age;
+		        public int usri2_priv;
+		        public string usri2_home_dir;
+		        public string usri2_comment;
+		        public int usri2_flags;
+		        public string usri2_script_path;
+		        public int usri2_auth_flags;
+		        public string usri2_full_name;
+		        public string usri2_usr_comment;
+		        public string usri2_parms;
+		        public string usri2_workstations;
+		        public int usri2_last_logon;
+		        public int usri2_last_logoff;
+		        public int usri2_acct_expires;
+		        public int usri2_max_storage;
+		        public int usri2_units_per_week;
+		        public int usri2_bad_pw_count;
+		        public int usri2_num_logons;
+		        public string usri2_logon_server;
 			}
 		}
 
