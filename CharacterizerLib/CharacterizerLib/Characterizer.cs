@@ -20,6 +20,7 @@ using System.ServiceProcess;
 using System.Text;
 using Microsoft.Win32;
 using System.Security.Principal;
+using System.Security.AccessControl;
 
 
 
@@ -622,7 +623,243 @@ public class Characterizer {
 		
 		
 	}
+		
+	public class NetShareInfo{
+		public List<NetShareDetails> Shares { get; private set;}
+		public int ShareCount { get; private set;}
+		
+		public NetShareInfo(){
+			Shares = new List<NetShareDetails>();
+			Refresh();
+		}
+		
 	
+		public void Refresh(string server = null){
+			IntPtr buffer = IntPtr.Zero;
+			int entriesRead, totalEntries, resumeHandle = 0;
+			int level = 502;
+			
+			try {
+				int result = NetShareEnum(server,level, out buffer, -1, out entriesRead, out totalEntries, ref resumeHandle);
+				
+				if (result == 0 && buffer != IntPtr.Zero){
+					int structSize = Marshal.SizeOf(typeof(SHARE_INFO_502));
+					IntPtr currentPtr = buffer;
+					
+					for (int i = 0; i < entriesRead; i++){
+						SHARE_INFO_502 shareInfo = (SHARE_INFO_502)Marshal.PtrToStructure(currentPtr,typeof(SHARE_INFO_502));
+						var sddl = GetShareAcl(shareInfo.shi502_security_descriptor);
+							var share = new NetShareDetails{
+							Name = shareInfo.shi502_netname,
+							Path = shareInfo.shi502_path,
+							Description = shareInfo.shi502_remark,
+							MaxUses = shareInfo.shi502_max_uses,
+							CurrentUses = shareInfo.shi502_current_uses,
+							Type = ShareTypeToString(shareInfo.shi502_type),
+							IsHidden = shareInfo.shi502_netname.EndsWith("$"),
+							IsAdminShare = IsAdminShareName(shareInfo.shi502_netname),
+							Sddl = sddl,
+							ACL = ParseSddlToAclEntries(sddl)
+						};
+						
+						Shares.Add(share);
+						
+						currentPtr = new IntPtr(currentPtr.ToInt64() + structSize);
+					}
+				}
+			} catch {
+				
+				throw;
+			}
+			
+			if(buffer != IntPtr.Zero)
+				NetApiBufferFree(buffer);
+			ShareCount = Shares.Count;
+			
+		}
+		
+		
+		
+		private static bool IsAdminShareName(string name){
+			return name.Equals("ADMIN$", StringComparison.OrdinalIgnoreCase) ||
+				name.Equals("C$", StringComparison.OrdinalIgnoreCase) ||
+				name.Equals("IPC$", StringComparison.OrdinalIgnoreCase);
+		}
+		
+		private static string ShareTypeToString(uint type)
+		{
+			switch (type) {
+				case 0: return "Disk Drive";
+				case 1: return "Printer";
+				case 2: return "Device";
+				case 3: return "IPC";
+				default: return "Unknown";
+			}
+		}
+		
+		private static string GetShareAcl(IntPtr securityDescriptorPtr)
+		{
+			if (securityDescriptorPtr == IntPtr.Zero)
+				return "No ACL (null descriptor)";
+			const uint SDDL_REVISION_1 = 1;
+			const uint OWNER_SECURITY_INFORMATION = 0x00000001;
+		    const uint GROUP_SECURITY_INFORMATION = 0x00000002;
+		    const uint DACL_SECURITY_INFORMATION  = 0x00000004;
+		    
+		    IntPtr sddlPtr;
+		    uint sddlLen;
+		    
+		    bool success = ConvertSecurityDescriptorToStringSecurityDescriptor(
+		    	securityDescriptorPtr,
+		    	SDDL_REVISION_1,
+		    	OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION,
+		    	out sddlPtr,
+		    	out sddlLen);
+		   	
+		    if(!success || sddlPtr == IntPtr.Zero)
+		    	return "Failed to Parse ACL";
+		    string sddl = Marshal.PtrToStringUni(sddlPtr);
+		    LocalFree(sddlPtr);
+		    
+		    return sddl;
+		}
+		
+		private static List<AclEntry> ParseSddlToAclEntries(string sddl)
+		{
+			List<AclEntry> entries = new List<AclEntry>();
+			
+			try{
+				CommonSecurityDescriptor descriptor = new CommonSecurityDescriptor(false,false, sddl);
+				
+				foreach (CommonAce ace in descriptor.DiscretionaryAcl)
+				{
+					string sid = ace.SecurityIdentifier.Value;
+					string resolvedName;
+					try{
+						resolvedName = ace.SecurityIdentifier.Translate(typeof(NTAccount)).ToString();
+					}
+					catch{
+						resolvedName = sid;
+					}
+					
+					string accessType = ace.AceType == AceType.AccessAllowed ? "Allow" : ace.AceType == AceType.AccessDenied ? "Deny" : ace.AceType.ToString();
+					entries.Add(new AclEntry {
+					            	Identity = resolvedName,
+					            	Rights = ace.AccessMask.ToString("X"),
+					            	AccessType = accessType,
+					            	Inheritance = ace.AceFlags.ToString()
+					            });
+				}
+			} catch {
+				entries.Add(new AclEntry { Identity = "Invalid ACL or Parsing Failed" });
+			}
+			
+			return entries;
+		}
+		
+		public void Print(){
+			if (Shares == null || Shares.Count == 0){
+				Console.WriteLine("No shares found. \n");
+				return;
+			}
+			
+					foreach (var share in Shares)
+		    {
+		        Console.WriteLine("Share Name   : {0}", share.Name);
+		        Console.WriteLine("Path         : {0}", share.Path);
+		        Console.WriteLine("Description  : {0}", share.Description);
+		        Console.WriteLine("Hidden       : {0}", share.IsHidden ? "Yes" : "No");
+		        Console.WriteLine("Admin Share  : {0}", share.IsAdminShare ? "Yes" : "No");
+		        Console.WriteLine("Type         : {0}", share.Type);
+		        Console.WriteLine("Max Uses     : {0}", share.MaxUses);
+		        Console.WriteLine("Current Uses : {0}", share.CurrentUses);
+		        Console.WriteLine("SDDL         : {0}", share.Sddl);
+		        Console.WriteLine("ACL Entries  :");
+		
+		        if (share.ACL != null && share.ACL.Count > 0)
+		        {
+		            foreach (var acl in share.ACL)
+		            {
+		                Console.WriteLine("  - Identity    : {0}", acl.Identity);
+		                Console.WriteLine("    Access Type : {0}", acl.AccessType);
+		                Console.WriteLine("    Rights      : {0}", acl.Rights);
+		                Console.WriteLine("    Inheritance : {0}", acl.Inheritance);
+		                Console.WriteLine();
+		            }
+		        }
+		        else
+		        {
+		            Console.WriteLine("  (No ACL entries parsed or found)");
+		        }
+		
+		        Console.WriteLine(new string('-', 60));
+		    }
+		}
+		
+
+		
+		public class NetShareDetails{
+			public string Name { get; set; }
+			public string Path { get; set; }
+			public string Description { get; set; }
+			public string Type { get; set; }
+			public uint MaxUses { get; set; }
+			public uint CurrentUses { get; set; }
+			public bool IsHidden { get; set; }
+			public bool IsAdminShare { get; set; }
+			public string Sddl { get; set; }
+			public List<AclEntry> ACL { get; set; }
+		}
+		
+		public class AclEntry
+		{
+			public string Identity { get; set; }
+			public string Rights { get; set; }
+			public string AccessType { get; set; }
+			public string Inheritance { get; set; }
+		}
+		
+		
+		[DllImport("kernel32.dll", SetLastError = true)]
+		private static extern IntPtr LocalFree(IntPtr hMem);
+		
+		[DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+		public static extern bool ConvertSecurityDescriptorToStringSecurityDescriptor(
+			IntPtr SecurityDescriptor,
+			uint RequestedRevision,
+			uint SecurityInformation,
+			out IntPtr StringSecurityDescriptor,
+			out uint StringSecurityDescriptorLen);
+		
+		[DllImport("Netapi32.dll", CharSet = CharSet.Unicode)]
+		public static extern int NetApiBufferFree(IntPtr Buffer);
+	
+		[DllImport("Netapi32.dll", CharSet = CharSet.Unicode)]
+		public static extern int NetShareEnum(
+			string servername,
+			int level,
+			out IntPtr bufPtr,
+			int prefmaxlen,
+			out int entriesRead,
+			out int totalEntries,
+			ref int resumeHandle);
+		
+		[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+		public struct SHARE_INFO_502
+		{
+			public string shi502_netname;
+			public uint shi502_type;
+			public string shi502_remark;
+			public uint shi502_permissions;
+			public uint shi502_max_uses;
+			public uint shi502_current_uses;
+			public string shi502_path;
+			public string shi502_passwd;
+			public uint shi502_reserved;
+			public IntPtr shi502_security_descriptor;
+		}
+		
+		}
 	}
 }
 
