@@ -34,6 +34,7 @@ public class Characterizer {
 	
 	public class BaseInfo
 	{
+		//Base Information to collect on every system
 		public string Hostname { get; private set;}
 		public List<string> IPv4Addresses { get; private set; }
 		public List<string> IPv6Addresses { get; private set; } 
@@ -56,11 +57,11 @@ public class Characterizer {
 	            string.Join(", ", IPv6Addresses.ToArray()));
 	    }
 		
-		public virtual void Refresh(){
+		public void Refresh(){
 			Hostname = Dns.GetHostName();
 			IPv4Addresses.Clear();
 			IPv6Addresses.Clear();
-			
+			//Query API for Hostname and IP addresses in both IPv4 and IPv6
 			IPAddress[] addresses = Dns.GetHostAddresses(Hostname);
 			foreach (IPAddress addr in addresses){
 				if (addr.AddressFamily == AddressFamily.InterNetwork){
@@ -91,8 +92,10 @@ public class Characterizer {
 		}
 		
 		public void Refresh(){
+			//Query Processes through API
+			Processes.Clear();
 			Process[] procarr = Process.GetProcesses();
-			
+			//Add process details to object
 			foreach(Process p in procarr){
 				ProcDetails proc = new ProcDetails();
 				try {
@@ -101,7 +104,7 @@ public class Characterizer {
 					proc.Path = GetProcessPath(p);
 					proc.ParentPID = GetParentPID(p.Id);
 					proc.SHA256 = ComputeSHA256(proc.Path);
-					
+					//WMI Query
 					string query = "SELECT CommandLine FROM Win32_Process WHERE ProcessId = " + proc.PID;
 					using (ManagementObjectSearcher searcher = new ManagementObjectSearcher(query)){
 						foreach (ManagementObject obj in searcher.Get()) {
@@ -141,7 +144,7 @@ public class Characterizer {
 
 		
 		private string ComputeSHA256(string filepath)
-    {
+    {	//Read in file and create SHA256 hash based on bytes read
         try
         {
             using (FileStream stream = File.Open(filepath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
@@ -156,7 +159,7 @@ public class Characterizer {
             return "SHA Error";
         }
     }
-		
+		//WMI Query for PPID based on PID
 		private int GetParentPID(int pid){
 			try{
 				string query = "SELECT ParentProcessId from Win32_Process WHERE ProcessId = " + pid;
@@ -169,10 +172,10 @@ public class Characterizer {
 			} catch {
 				//error processing
 			}
-			
+			//Not Found
 			return -1;
 		}
-		
+		//Open process and use Kernel API to query Image Name
 		private string GetProcessPath(Process process){
 			try{
 				StringBuilder buffer = new StringBuilder(1024);
@@ -192,7 +195,7 @@ public class Characterizer {
 			
 			return "N/A";
 		}
-		
+		//Kernel DLL APIs
 		[DllImport("kernel32.dll")]
 		static extern bool QueryFullProcessImageName(IntPtr hProcess, int flags, StringBuilder exeName, ref int size);
 		
@@ -205,7 +208,7 @@ public class Characterizer {
     
     	
     	
-		
+	//Detail Object
 	public class ProcDetails
 		{
 			public string Name { get; set; }
@@ -237,6 +240,7 @@ public class Characterizer {
 		public void Refresh(){
 			
 			try{
+				//API query through ServiceController
 				ServiceController[] service = ServiceController.GetServices();
 				
 				foreach(ServiceController serv in service){
@@ -313,14 +317,15 @@ public class Characterizer {
 			}
 			
 			private void CollectUsers(){
+				//Values required for DLL INTOP Functions
 				int entriesRead, totalEnteries, resumeHandle = 0;
 				IntPtr buffer = IntPtr.Zero;
-					
+				//Check Status for 0 == Good and Pointer for non-zero value
 				int status = NetUserEnum(null, 0, 2, out buffer, -1, out entriesRead, out totalEnteries, ref resumeHandle);
 				if (status == 0 && buffer != IntPtr.Zero){
 					IntPtr currentPtr = buffer;
 					int structsize = Marshal.SizeOf(typeof(USER_INFO_0));
-					
+					//Iterate pointer by number of entries. Read memory to the same size of struct
 					for (int i = 0; i < entriesRead; i++){
 						USER_INFO_0 user = (USER_INFO_0)Marshal.PtrToStructure(currentPtr, typeof(USER_INFO_0));
 						var detailed = GetUserDetails(user.usri0_name);
@@ -328,12 +333,14 @@ public class Characterizer {
 						currentPtr = new IntPtr(currentPtr.ToInt64() + structsize);
 					}
 				 	UsersCount = Users.Count;
+				 	//Free Created Buffer
 					NetApiBufferFree(buffer);
 				}
 			}
 			
 			private UserDetails GetUserDetails(string username)
 			{
+				//Read via INTOP Functions similar to above
 				IntPtr buffer  = IntPtr.Zero;
 				int status = NetUserGetInfo(null, username, 2, out buffer);
 				
@@ -414,8 +421,8 @@ public class Characterizer {
 				public bool canChangePassword { get; set; }
 				
 			}
-			
-			[DllImport("Netapi32.dll", CharSet = CharSet.Unicode)]
+			//DLL Imports 
+			[DllImport("Netapi32.dll", CharSet = CharSet.Unicode)] //Unicode Required for C#
 			private static extern int NetUserEnum(string servername, int level, int filter, out IntPtr bufptr, int prefmaxlen, out int entriesread, out int totalentries, ref int resume_handle);
 			
 			[DllImport("Netapi32.dll")]
@@ -479,10 +486,148 @@ public class Characterizer {
 			}
 		}
 
+	public class GroupInfo{
+		public List<GroupDetails> Groups { get; private set; }
+		public int GroupCount { get; private set; }
+		
+		public GroupInfo(){
+			Groups = new List<GroupDetails>();
+			refresh();
+		}
+		
+		public void refresh()
+		{
+			Groups.Clear();
+			
+			IntPtr buffer = IntPtr.Zero;
+			int entriesRead, totalEntries, resumeHandle = 0;
+			int status = NetLocalGroupEnum(null, 1, out buffer, -1, out entriesRead, out totalEntries, ref resumeHandle);
+			
+			if (status == 0 && buffer != IntPtr.Zero)
+			{
+				int structSize = Marshal.SizeOf(typeof(LOCALGROUP_INFO_1));
+				IntPtr currentPtr = buffer;
+				
+				for(int i = 0; i < entriesRead; i++){
+					LOCALGROUP_INFO_1 group = (LOCALGROUP_INFO_1)Marshal.PtrToStructure(currentPtr, typeof(LOCALGROUP_INFO_1));
+					
+					GroupDetails g = new GroupDetails();
+					g.GroupName = group.lgrpi1_name;
+					g.Description = group.lgrpi1_comment;
+					g.Members = GetGroupMembers(group.lgrpi1_name);
+					g.SID = GetGroupSid(g.GroupName);
+					
+					if(g.SID.StartsWith("S-1-5-32"))
+						g.Type = "Built-In";
+					else if (g.SID.StartsWith("S-1-5-21"))
+						g.Type = "Local";
+					else
+						g.Type = "Domain";
+					
+					Groups.Add(g);
+					
+					currentPtr = new IntPtr(currentPtr.ToInt64() + structSize);
+				}
+				
+				NetApiBufferFree(buffer);
+			}
+			GroupCount = Groups.Count;
+		}
+		
+		public List<string> GetGroupMembers(string groupname){
+			List<string> members = new List<string>();
+			IntPtr buffer = IntPtr.Zero;
+			int entriesRead, totalEntries, resumeHandle = 0;
+			
+			int status = NetLocalGroupGetMembers(null, groupname, 1, out buffer, -1,out entriesRead, out totalEntries, ref resumeHandle);
+			
+			if (status == 0 && buffer != IntPtr.Zero)
+			{
+				int structsize = Marshal.SizeOf(typeof(LOCALGROUP_MEMBERS_INFO_1));
+				IntPtr currentPtr = buffer;
+				
+				for(int i = 0; i < entriesRead; i++){
+					LOCALGROUP_MEMBERS_INFO_1 member = (LOCALGROUP_MEMBERS_INFO_1)Marshal.PtrToStructure(currentPtr, typeof(LOCALGROUP_MEMBERS_INFO_1));
+					members.Add(member.lgrmi1_name);
+					currentPtr = new IntPtr(currentPtr.ToInt64() + structsize);
+				}
+				
+				NetApiBufferFree(buffer);
+			}
+			
+			return members;
+		}
+		
+		public static string GetGroupSid(string groupname){
+			try{
+				NTAccount account = new NTAccount(groupname);
+				SecurityIdentifier sid = (SecurityIdentifier)account.Translate(typeof(SecurityIdentifier));
+				return sid.Value;
+			} catch {
+				return "SID Lookup Failed";
+			}
+		}
+		
+	
+		
+		[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+		public struct LOCALGROUP_INFO_1
+		{
+			public string lgrpi1_name;
+			public string lgrpi1_comment;
+		}
+		
+		[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+		public struct LOCALGROUP_MEMBERS_INFO_1
+		{
+			public IntPtr lgrmi1_sid;
+			public int lgrmi1_sidusage;
+			public string lgrmi1_name;
+		}
+		
+		[DllImport("Netapi32.dll", CharSet = CharSet.Unicode)]
+		public static extern int NetLocalGroupEnum(
+			string servername,
+			int level,
+			out IntPtr bufptr,
+			int prefmaxlen,
+			out int entriesread,
+			out int totalentries,
+			ref int resumehandle
+		);
+		
+		[DllImport("Netapi32.dll")]
+		public static extern int NetApiBufferFree(IntPtr Buffer);
+		
+		[DllImport("Netapi32.dll", CharSet = CharSet.Unicode)]
+		public static extern int NetLocalGroupGetMembers(
+			string servername,
+			string groupname,
+			int level,
+			out IntPtr bufptr,
+			int prefmaxlen,
+			out int entriesread,
+			out int totalentries,
+			ref int resumehandle
+		);
+		
+		
+		public class GroupDetails{
+			public string GroupName { get; set; }
+			public string Description { get; set; }
+			public string SID { get; set; }
+			public string Type { get; set; }
+			public List<string> Members { get; set; }
+		}
+		
+		
+	}
 	
 	}
 }
 
+
+//Magic
 public static class SignatureHelper
 {
     private const uint WTD_UI_NONE = 2;
