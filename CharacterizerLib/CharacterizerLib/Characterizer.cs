@@ -16,11 +16,13 @@ using System.Security.Cryptography;
 using System.Management;
 using System.Security.Cryptography.X509Certificates;
 using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.ComTypes;
 using System.ServiceProcess;
 using System.Text;
 using Microsoft.Win32;
 using System.Security.Principal;
 using System.Security.AccessControl;
+
 
 
 
@@ -860,7 +862,177 @@ public class Characterizer {
 		}
 		
 		}
+	
+	public class SchTaskInfo{
+		public List<ScheduledTask> Tasks { get; private set; }
+		public int TaskCount { get;  private set; }
+		
+		public SchTaskInfo(){
+			Tasks = new List<ScheduledTask>();
+			Refresh();
+		}
+		
+		public void Refresh(){
+			Tasks.Clear();
+			try{
+				if (Environment.OSVersion.Version.Major >= 6)
+					CollectUsingCom();
+				else
+					CollectUsingSchtasks();
+			} catch {
+				CollectUsingSchtasks();
+			}
+		}
+		
+		private void CollectUsingCom()
+		{
+			Type schedulerType = Type.GetTypeFromProgID("Schedule.Service");
+			if(schedulerType == null){
+				CollectUsingSchtasks();
+				return;
+			}
+			
+			object scheduler = Activator.CreateInstance(schedulerType);
+			schedulerType.InvokeMember("Connect", System.Reflection.BindingFlags.InvokeMethod, null, scheduler, null);
+			object rootFolder = schedulerType.InvokeMember("GetFolder",System.Reflection.BindingFlags.InvokeMethod, null, scheduler, new object[] {"\\"});
+			
+			EnumerateFolder(schedulerType,rootFolder);
+		}
+		
+		private void EnumerateFolder(Type schedulertype, object folder)
+		{
+			object[] noArgs = new object[] { 1 };
+			object tasks = schedulertype.InvokeMember("GetTasks", System.Reflection.BindingFlags.InvokeMethod, null, folder, noArgs);
+			int count = (int)tasks.GetType().InvokeMember("Count",System.Reflection.BindingFlags.GetProperty, null, tasks, null);
+			
+			for(int i = 1; i <= count; i++){
+				object task = tasks.GetType().InvokeMember("Item",System.Reflection.BindingFlags.InvokeMethod, null, tasks, new object[] {i});
+				
+				string name = task.GetType().InvokeMember("Name", System.Reflection.BindingFlags.GetProperty, null, task, null) as string;
+				string path = task.GetType().InvokeMember("Path",System.Reflection.BindingFlags.GetProperty, null, task, null) as string;
+				string state = tasks.GetType().InvokeMember("State",System.Reflection.BindingFlags.GetProperty, null, task, null) as string;
+				
+				object definition = task.GetType().InvokeMember("Definition", System.Reflection.BindingFlags.GetProperty, null, task, null);
+                object principal = definition.GetType().InvokeMember("Principal", System.Reflection.BindingFlags.GetProperty, null, definition, null);
+                object registration = definition.GetType().InvokeMember("RegistrationInfo", System.Reflection.BindingFlags.GetProperty, null, definition, null);
+                object actions = definition.GetType().InvokeMember("Actions", System.Reflection.BindingFlags.GetProperty, null, definition, null);
+
+                string userId = principal.GetType().InvokeMember("UserId", System.Reflection.BindingFlags.GetProperty, null, principal, null) as string;
+                string author = registration.GetType().InvokeMember("Author", System.Reflection.BindingFlags.GetProperty, null, registration, null) as string;
+                string description = registration.GetType().InvokeMember("Description", System.Reflection.BindingFlags.GetProperty, null, registration, null) as string;
+                
+
+                string command = "N/A";
+                if ((int)actions.GetType().InvokeMember("Count", System.Reflection.BindingFlags.GetProperty, null, actions, null) > 0){
+                	object action = actions.GetType().InvokeMember("Item", System.Reflection.BindingFlags.InvokeMethod, null, actions, new object[] { 1 });
+                	command = action.GetType().InvokeMember("Path", System.Reflection.BindingFlags.GetProperty, null, action, null) as string;
+                }
+                
+                ScheduledTask taskEntry = new ScheduledTask();
+                taskEntry.Name = name;
+                taskEntry.Path = path;
+                taskEntry.State = state;
+                taskEntry.Command = command;
+                taskEntry.UserId = userId;
+                taskEntry.Author = author;
+                taskEntry.Description = description;
+
+                Tasks.Add(taskEntry);
+				
+			}
+			
+			object subFolders = schedulertype.InvokeMember("GetFolders", System.Reflection.BindingFlags.InvokeMethod, null, folder, new object[] { 0 });
+			int subCount = (int)subFolders.GetType().InvokeMember("Count", System.Reflection.BindingFlags.GetProperty, null, subFolders, null);
+			for (int i = 1; i <= subCount; i++){
+				object subFolder = subFolders.GetType().InvokeMember("Item", System.Reflection.BindingFlags.InvokeMethod, null, subFolders, new object[] { i });
+				EnumerateFolder(schedulertype, subFolder);
+			}
+		}
+		
+		
+		private void CollectUsingSchtasks(){
+			try{
+				ProcessStartInfo psi = new ProcessStartInfo("schtasks", "/query /fo CSV /v"){
+					RedirectStandardOutput = true,
+					UseShellExecute = false,
+					CreateNoWindow = true
+				};
+				
+				using (Process proc = Process.Start(psi))
+				{
+					using (StreamReader reader = proc.StandardOutput)
+					{
+						string line;
+						bool skipHeader = true;
+						
+						while((line = reader.ReadLine()) != null)
+						{
+							if (skipHeader) { skipHeader = false; continue; }
+							if (string.IsNullOrEmpty(line)) continue;
+							
+							string[] fields = ParseCsvLine(line);
+							if (fields.Length < 5) continue;
+							
+							ScheduledTask task = new ScheduledTask();
+							task.Name = fields[0].Trim('"');
+							task.Path = fields[1].Trim('"');
+							task.UserId = fields[2].Trim('"');
+							task.State = fields[3].Trim('"');
+							task.Command = fields[4].Trim('"');
+							
+							Tasks.Add(task);
+						}
+					}
+				}
+			} catch {
+				
+			}
+		}
+		
+		private string[] ParseCsvLine(string line)
+		{
+			List<string> parts = new List<string>();
+			StringBuilder sb = new StringBuilder();
+			bool inQuotes = false;
+			
+			for (int i = 0; i < line.Length; i++){
+				char c = line[i];
+				
+				if (c == '\"')
+				{
+					inQuotes = !inQuotes;
+				}
+			else if (c == ',' && !inQuotes)
+			{
+				parts.Add(sb.ToString());
+				sb.Length = 0;
+			}
+			else
+			{
+				sb.Append(c);
+			}
+			
+			
+			}
+			parts.Add(sb.ToString());
+			return parts.ToArray();
+		}
+		
+		
+		public class ScheduledTask
+		{
+			public string Name { get; set;}
+			public string Path { get; set;}
+			public string Arguments { get; set;}
+			public string WorkingDir {get; set; }
+			public string Author { get; set;}
+			public string Description { get; set;}
+			public string Command { get; set;}
+			public string UserId { get; set;}
+			public string State { get; set;}
+		}
 	}
+	
 }
 
 
@@ -976,5 +1148,6 @@ public class SignatureInfo
     {
     	return IsTrusted ? string.Format("Trusted - {0}", SignerName) : "Untrusted or unsigned";
     }
+	}
 }
 

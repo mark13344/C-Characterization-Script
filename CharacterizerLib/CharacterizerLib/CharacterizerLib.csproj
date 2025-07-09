@@ -36,6 +36,7 @@
     <Reference Include="System.Security.Principal" />
     <Reference Include="System.ServiceProcess" />
     <Reference Include="System.Xml" />
+    <Reference Include="TaskScheduler" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Characterizer.cs" />
