@@ -923,9 +923,16 @@ public class Characterizer {
                 
 
                 string command = "N/A";
+                string arguments = "";
+                string workingDir = "";
                 if ((int)actions.GetType().InvokeMember("Count", System.Reflection.BindingFlags.GetProperty, null, actions, null) > 0){
                 	object action = actions.GetType().InvokeMember("Item", System.Reflection.BindingFlags.InvokeMethod, null, actions, new object[] { 1 });
                 	command = action.GetType().InvokeMember("Path", System.Reflection.BindingFlags.GetProperty, null, action, null) as string;
+                	path = action.GetType().InvokeMember("Path", System.Reflection.BindingFlags.GetProperty, null, action, null) as string;
+                	arguments = action.GetType().InvokeMember("Arguments",System.Reflection.BindingFlags.GetProperty, null, action, null) as string;
+                	workingDir = action.GetType().InvokeMember("WorkingDirectory",System.Reflection.BindingFlags.GetProperty, null, action, null) as string;
+                
+                	
                 }
                 
                 ScheduledTask taskEntry = new ScheduledTask();
@@ -936,6 +943,9 @@ public class Characterizer {
                 taskEntry.UserId = userId;
                 taskEntry.Author = author;
                 taskEntry.Description = description;
+                taskEntry.Arguments = arguments;
+                taskEntry.WorkingDir = workingDir;
+                
 
                 Tasks.Add(taskEntry);
 				
@@ -978,7 +988,31 @@ public class Characterizer {
 							task.Path = fields[1].Trim('"');
 							task.UserId = fields[2].Trim('"');
 							task.State = fields[3].Trim('"');
-							task.Command = fields[4].Trim('"');
+							string fullCommand = fields[4].Trim('"');
+							string startIn = fields.Length > 9 ? fields[9].Trim('"'): "";
+							
+							string command = fullCommand;
+							string args = "";
+							
+							if (fullCommand.StartsWith("\""))
+							{
+								int endQuote = fullCommand.IndexOf("\"",1);
+								if(endQuote > 0 && endQuote + 1 < fullCommand.Length){
+									command = fullCommand.Substring(0, endQuote + 1);
+									args = fullCommand.Substring(endQuote + 1).TrimStart();
+								}
+							} else {
+								int space = fullCommand.IndexOf(" ");
+								if (space > 0)
+								{
+									command = fullCommand.Substring(0, space);
+									args = fullCommand.Substring(space + 1);
+								}
+							}
+							
+							task.Command = command;
+							task.Arguments = args;
+							task.WorkingDir = startIn;
 							
 							Tasks.Add(task);
 						}
