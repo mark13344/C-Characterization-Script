@@ -22,6 +22,7 @@ using System.Text;
 using Microsoft.Win32;
 using System.Security.Principal;
 using System.Security.AccessControl;
+using TaskScheduler;
 
 
 
@@ -878,6 +879,7 @@ public class Characterizer {
 				if (Environment.OSVersion.Version.Major >= 6)
 					CollectUsingCom();
 				else
+                    Console.WriteLine("Using ALT: Schtasks");
 					CollectUsingSchtasks();
 			} catch {
 				CollectUsingSchtasks();
@@ -886,81 +888,66 @@ public class Characterizer {
 		
 		private void CollectUsingCom()
 		{
-			Type schedulerType = Type.GetTypeFromProgID("Schedule.Service");
-			if(schedulerType == null){
+            TaskScheduler.TaskScheduler scheduler = new TaskScheduler.TaskScheduler();
+			if(scheduler == null){
 				CollectUsingSchtasks();
 				return;
 			}
-			
-			object scheduler = Activator.CreateInstance(schedulerType);
-			schedulerType.InvokeMember("Connect", System.Reflection.BindingFlags.InvokeMethod, null, scheduler, null);
-			object rootFolder = schedulerType.InvokeMember("GetFolder",System.Reflection.BindingFlags.InvokeMethod, null, scheduler, new object[] {"\\"});
-			
-			EnumerateFolder(schedulerType,rootFolder);
+
+            scheduler.Connect();
+            ITaskFolder rootFolder = scheduler.GetFolder("\\");
+			EnumerateFolder(rootFolder);
 		}
 		
-		private void EnumerateFolder(Type schedulertype, object folder)
+		private void EnumerateFolder(ITaskFolder folder)
 		{
-			object[] noArgs = new object[] { 1 };
-			object tasks = schedulertype.InvokeMember("GetTasks", System.Reflection.BindingFlags.InvokeMethod, null, folder, noArgs);
-			int count = (int)tasks.GetType().InvokeMember("Count",System.Reflection.BindingFlags.GetProperty, null, tasks, null);
-			
-			for(int i = 1; i <= count; i++){
-				object task = tasks.GetType().InvokeMember("Item",System.Reflection.BindingFlags.InvokeMethod, null, tasks, new object[] {i});
-				
-				string name = task.GetType().InvokeMember("Name", System.Reflection.BindingFlags.GetProperty, null, task, null) as string;
-				string path = task.GetType().InvokeMember("Path",System.Reflection.BindingFlags.GetProperty, null, task, null) as string;
-				string state = tasks.GetType().InvokeMember("State",System.Reflection.BindingFlags.GetProperty, null, task, null) as string;
-				
-				object definition = task.GetType().InvokeMember("Definition", System.Reflection.BindingFlags.GetProperty, null, task, null);
-                object principal = definition.GetType().InvokeMember("Principal", System.Reflection.BindingFlags.GetProperty, null, definition, null);
-                object registration = definition.GetType().InvokeMember("RegistrationInfo", System.Reflection.BindingFlags.GetProperty, null, definition, null);
-                object actions = definition.GetType().InvokeMember("Actions", System.Reflection.BindingFlags.GetProperty, null, definition, null);
-
-                string userId = principal.GetType().InvokeMember("UserId", System.Reflection.BindingFlags.GetProperty, null, principal, null) as string;
-                string author = registration.GetType().InvokeMember("Author", System.Reflection.BindingFlags.GetProperty, null, registration, null) as string;
-                string description = registration.GetType().InvokeMember("Description", System.Reflection.BindingFlags.GetProperty, null, registration, null) as string;
-                
+            IRegisteredTaskCollection tasks = folder.GetTasks(1);
+            for (int i = 1; i <= tasks.Count; i++)
+            {
+                IRegisteredTask task = tasks[i];
+                ITaskDefinition definition = task.Definition;
+                IActionCollection actions = definition.Actions;
 
                 string command = "N/A";
                 string arguments = "";
                 string workingDir = "";
-                if ((int)actions.GetType().InvokeMember("Count", System.Reflection.BindingFlags.GetProperty, null, actions, null) > 0){
-                	object action = actions.GetType().InvokeMember("Item", System.Reflection.BindingFlags.InvokeMethod, null, actions, new object[] { 1 });
-                	command = action.GetType().InvokeMember("Path", System.Reflection.BindingFlags.GetProperty, null, action, null) as string;
-                	path = action.GetType().InvokeMember("Path", System.Reflection.BindingFlags.GetProperty, null, action, null) as string;
-                	arguments = action.GetType().InvokeMember("Arguments",System.Reflection.BindingFlags.GetProperty, null, action, null) as string;
-                	workingDir = action.GetType().InvokeMember("WorkingDirectory",System.Reflection.BindingFlags.GetProperty, null, action, null) as string;
-                
-                	
+
+                if (actions.Count > 0)
+                {
+                    IAction action = actions[1];
+                    if (action.Type == _TASK_ACTION_TYPE.TASK_ACTION_EXEC)
+                    {
+                        IExecAction execAction = (IExecAction)action;
+                        command = execAction.Path ?? "";
+                        arguments = execAction.WorkingDirectory ?? "";
+                    }
                 }
-                
+
                 ScheduledTask taskEntry = new ScheduledTask();
-                taskEntry.Name = name;
-                taskEntry.Path = path;
-                taskEntry.State = state;
+                taskEntry.Name = task.Name;
+                taskEntry.Path = task.Path;
+                taskEntry.State = task.State.ToString();
                 taskEntry.Command = command;
-                taskEntry.UserId = userId;
-                taskEntry.Author = author;
-                taskEntry.Description = description;
+                taskEntry.UserId = definition.Principal.UserId ?? "";
+                taskEntry.Author = definition.RegistrationInfo.Author ?? "";
+                taskEntry.Description = definition.RegistrationInfo.Description ?? "";
                 taskEntry.Arguments = arguments;
                 taskEntry.WorkingDir = workingDir;
-                
 
                 Tasks.Add(taskEntry);
-				
-			}
-			
-			object subFolders = schedulertype.InvokeMember("GetFolders", System.Reflection.BindingFlags.InvokeMethod, null, folder, new object[] { 0 });
-			int subCount = (int)subFolders.GetType().InvokeMember("Count", System.Reflection.BindingFlags.GetProperty, null, subFolders, null);
-			for (int i = 1; i <= subCount; i++){
-				object subFolder = subFolders.GetType().InvokeMember("Item", System.Reflection.BindingFlags.InvokeMethod, null, subFolders, new object[] { i });
-				EnumerateFolder(schedulertype, subFolder);
-			}
+            }
+
+            ITaskFolderCollection subFolders = folder.GetFolders(0);
+            for (int i = 1; i <= subFolders.Count; i++)
+            {
+                EnumerateFolder(subFolders[i]);
+            }
+
 		}
-		
-		
-		private void CollectUsingSchtasks(){
+
+
+        private void CollectUsingSchtasks()
+        {
 			try{
 				ProcessStartInfo psi = new ProcessStartInfo("schtasks", "/query /fo CSV /v"){
 					RedirectStandardOutput = true,
@@ -984,11 +971,13 @@ public class Characterizer {
 							if (fields.Length < 5) continue;
 							
 							ScheduledTask task = new ScheduledTask();
-							task.Name = fields[0].Trim('"');
+							task.Name = fields[1].Trim('"');
 							task.Path = fields[1].Trim('"');
 							task.UserId = fields[2].Trim('"');
 							task.State = fields[3].Trim('"');
-							string fullCommand = fields[4].Trim('"');
+                            task.Author = fields[7].Trim('"');
+                            task.Description = fields.Length > 10 ? fields[10].Trim('"') : "";
+							string fullCommand = fields[8].Trim('"');
 							string startIn = fields.Length > 9 ? fields[9].Trim('"'): "";
 							
 							string command = fullCommand;

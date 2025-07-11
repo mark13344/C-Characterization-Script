@@ -13,3 +13,6 @@ C:\Users\Developr\Documents\GitHub\C-Characterization-Script\CharacterizerLib\Ch
 C:\Users\Developr\Documents\GitHub\C-Characterization-Script\CharacterizerLib\CharacterizerLib\bin\Debug\CharacterizerLib.pdb
 C:\Users\Developr\Documents\GitHub\C-Characterization-Script\CharacterizerLib\CharacterizerLib\obj\Debug\CharacterizerLib.dll
 C:\Users\Developr\Documents\GitHub\C-Characterization-Script\CharacterizerLib\CharacterizerLib\obj\Debug\CharacterizerLib.pdb
+C:\Users\Mark\Documents\GitHub\C-Characterization-Script\CharacterizerLib\CharacterizerLib\bin\Debug\Interop.TaskScheduler.dll
+C:\Users\Mark\Documents\GitHub\C-Characterization-Script\CharacterizerLib\CharacterizerLib\obj\Debug\Interop.TaskScheduler.dll
+C:\Users\Mark\Documents\GitHub\C-Characterization-Script\CharacterizerLib\CharacterizerLib\obj\Debug\CharacterizerLib.csproj.ResolveComReference.cache
