@@ -27,6 +27,7 @@ using TaskScheduler;
 
 
 
+
 namespace CharacterizerLib{
 public class Characterizer {
 	/*public static void Main(String[] args){
@@ -1055,7 +1056,413 @@ public class Characterizer {
 			public string State { get; set;}
 		}
 	}
-	
+
+    public class DriverInfo
+    {
+        public List<DriverDetails> details { get; set; }
+        public int detailsCount { get; set; }
+
+        //Service type constants
+        const int SERVICE_KERNEL_DRIVER = 0x00000001;
+        const int SERVICE_FILE_SYSTEM_DRIVER = 0x00000002;
+        const int SERVICE_DRIVER = SERVICE_KERNEL_DRIVER | SERVICE_FILE_SYSTEM_DRIVER;
+        // Service State
+        const int SERVICE_STATE_ALL = 0x00000003;
+
+        // Service start types
+        const int SERVICE_AUTO_START = 0x00000002;
+        const int SERVICE_DEMAND_START = 0x00000003;
+        const int SERVICE_DISABLED = 0x00000004;
+
+        // Access rights
+        const int SC_MANAGER_ENUMERATE_SERVICE = 0x0004;
+
+        public DriverInfo()
+        {
+            details = new List<DriverDetails>();
+            Refresh();
+        }
+
+
+        public void Refresh()
+        {
+            details.Clear();
+            // Open handle to Service Control Manager
+            IntPtr scmHandle = OpenSCManager(null, null, SC_MANAGER_ENUMERATE_SERVICE);
+
+            if (scmHandle == IntPtr.Zero)
+            {
+                Console.WriteLine("Failed to open SCM");
+                return;
+            }
+
+            int bytesNeeded = 0;
+            int servicesReturned = 0;
+            int resumeHandle = 0;
+
+            EnumServicesStatus(scmHandle, SERVICE_DRIVER, SERVICE_STATE_ALL,
+                IntPtr.Zero, 0, out bytesNeeded, out servicesReturned, ref resumeHandle);
+
+            IntPtr buffer = Marshal.AllocHGlobal(bytesNeeded);
+
+            bool success = EnumServicesStatus(scmHandle, SERVICE_DRIVER, SERVICE_STATE_ALL,
+                buffer, bytesNeeded,out bytesNeeded, out servicesReturned, ref resumeHandle);
+
+            if (!success)
+            {
+                Console.WriteLine("EnumServicesStatus failed.");
+                Marshal.FreeHGlobal(buffer);
+                CloseServiceHandle(scmHandle);
+                return;
+            }
+
+            int structSize = Marshal.SizeOf(typeof(ENUM_SERVICE_STATUS));
+            IntPtr current = buffer;
+            // Enumerate Services
+            for (int i = 0; i < servicesReturned; i++)
+            {
+                ENUM_SERVICE_STATUS status = (ENUM_SERVICE_STATUS)Marshal.PtrToStructure(current, typeof(ENUM_SERVICE_STATUS));
+
+                IntPtr serviceHandle = OpenService(scmHandle, status.lpServiceName, 0x0001);
+
+                if (serviceHandle != IntPtr.Zero)
+                {
+                    int sizeNeeded;
+                    QueryServiceConfig(serviceHandle, IntPtr.Zero, 0, out sizeNeeded);
+
+                    IntPtr qscPtr = Marshal.AllocHGlobal(sizeNeeded);
+                    //Enumerate Service Information
+                    if (QueryServiceConfig(serviceHandle, qscPtr, sizeNeeded, out sizeNeeded))
+                    {
+                        QUERY_SERVICE_CONFIG qsc = (QUERY_SERVICE_CONFIG)Marshal.PtrToStructure(qscPtr, typeof(QUERY_SERVICE_CONFIG));
+
+                        DriverDetails record = new DriverDetails();
+
+                        record.ServiceName = status.lpServiceName;
+                        record.State = GetServiceStateString(status.ServiceStatus.dwCurrentState);
+                        record.DisplayName = status.lpDisplayName;
+                        record.PathToDriver = NormalizeDriverPath(qsc.lpBinaryPathName);
+                        record.StartType = GetStartTypeString(qsc.dwStartType);
+                        record.ServiceType = GetServiceTypeString(qsc.dwServiceType);
+                        try
+                        {
+                            record.FileVersion = FileVersionInfo.GetVersionInfo(record.PathToDriver);
+                        }
+                        catch
+                        {
+                            record.FileVersion = null;
+                        }
+
+                        details.Add(record);
+                    }
+                    Marshal.FreeHGlobal(qscPtr);
+                    CloseServiceHandle(serviceHandle);
+                }
+
+                current = new IntPtr(current.ToInt64() + structSize);
+            }
+            Marshal.FreeHGlobal(buffer);
+            CloseServiceHandle(scmHandle);
+
+            detailsCount = details.Count;
+            
+        }
+        
+        private static string GetStartTypeString(int startType)
+        {
+            switch (startType)
+            {
+                case 0x00000000: return "Boot Start";
+                case 0x00000001: return "System Start";
+                case 0x00000002: return "Auto Start";
+                case 0x00000003: return "Manual Start";
+                case 0x00000004: return "Disabled";
+                default: return "Unknown";
+            }
+        }
+        
+        private static string GetServiceTypeString(int serviceType)
+        {
+            StringBuilder sb = new StringBuilder();
+
+            if ((serviceType & 0x00000001) != 0) sb.Append("Kernel Driver, ");
+            if ((serviceType & 0x00000002) != 0) sb.Append("File System Driver, ");
+            if ((serviceType & 0x00000010) != 0) sb.Append("Own Process, ");
+            if ((serviceType & 0x00000020) != 0) sb.Append("Share Process, ");
+            if ((serviceType & 0x00000100) != 0) sb.Append("Interactive Process, ");
+
+            if (sb.Length == 0)
+                return "Unknown";
+            else
+                return sb.ToString().TrimEnd(' ', ',');
+        }
+
+        private static string GetServiceStateString(int state)
+        {
+            switch (state)
+            {
+                case 1: return "Stopped";
+                case 2: return "Start Pending";
+                case 3: return "Stop Pending";
+                case 4: return "Running";
+                case 5: return "Continue Pending";
+                case 6: return "Pause Pending";
+                case 7: return "Paused";
+                default: return "Unknown";
+            }
+        }
+
+        private static string NormalizeDriverPath(string rawPath)
+        {
+            if (string.IsNullOrEmpty(rawPath))
+                return null;
+
+            if (rawPath.StartsWith(@"\SystemRoot\", StringComparison.OrdinalIgnoreCase))
+            {
+                string systemRoot = Environment.GetEnvironmentVariable("SystemRoot"); // usually C:\Windows
+                return rawPath.Replace(@"\SystemRoot\", systemRoot + @"\");
+            }
+
+            if (rawPath.StartsWith("%SystemRoot%", StringComparison.OrdinalIgnoreCase))
+            {
+                string systemRoot = Environment.GetEnvironmentVariable("SystemRoot");
+                return rawPath.Replace("%SystemRoot%", systemRoot);
+            }
+
+            return rawPath;
+        }
+
+        //API Functions
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        struct ENUM_SERVICE_STATUS
+        {
+            public string lpServiceName;
+            public string lpDisplayName;
+            public SERVICE_STATUS ServiceStatus;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        struct SERVICE_STATUS
+        {
+            public int dwServiceType;
+            public int dwCurrentState;
+            public int dwControlsAccepted;
+            public int dwWin32ExitCode;
+            public int dwServiceSpecificExitCode;
+            public int dwCheckPoint;
+            public int dwWaitHint;
+        }
+
+        [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        static extern IntPtr OpenSCManager(string machinename, string databaseName, int dwAccess);
+
+        [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        static extern bool EnumServicesStatus(
+            IntPtr hSCManager,
+            int dwServiceType,
+            int dwServiceState,
+            IntPtr lpServices,
+            int cbBufSize,
+            out int pcbBytesNeeded,
+            out int lpServicesReturned,
+            ref int lpResumeHandle);
+
+        [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        static extern IntPtr OpenService(IntPtr hSCManager, string lpServiceName, int dwDesiredAccess);
+
+        [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        static extern bool QueryServiceConfig(
+            IntPtr hService,
+            IntPtr lpServiceConfig,
+            int cbBufSize,
+            out int pcbBytesNeeded);
+
+        [DllImport("advapi32.dll")]
+        static extern bool CloseServiceHandle(IntPtr hSCObject);
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        struct QUERY_SERVICE_CONFIG
+        {
+            public int dwServiceType;
+            public int dwStartType;
+            public int dwErrorControl;
+            public string lpBinaryPathName;
+            public string lpLoadOrderGroup;
+            public int dwTagId;
+            public string lpDependencies;
+            public string lpServiceStartName;
+            public string lpDisplayName;
+        }
+
+        //Details Object
+
+        public class DriverDetails
+        {
+            public string ServiceName { get; set; }
+            public string DisplayName { get; set; }
+            public string State { get; set; }
+            public string StartType { get; set; }
+            public string PathToDriver { get; set; }
+            public string ServiceType { get; set; }
+            public FileVersionInfo FileVersion { get; set; }
+        }
+
+    }
+
+    public class NetstatInfo
+    {
+        //Class Attributes
+        public List<NetstatDetails> Connections { get; set; }
+        public int ConnectionsCount { get; set; }
+
+        public NetstatInfo()
+        {
+            Connections = new List<NetstatDetails>();
+            Refresh();
+        }
+
+        public void Refresh() {
+            //Can be called to renew information
+        }
+
+
+        private void LoadTcpConnections()
+        {
+            int AF_INET = 2;
+            int bufferSize = 0;
+
+            uint result = GetExtendedTCPTable(IntPtr.Zero, ref bufferSize, true, AF_INET, TCP_TABLE_CLASS.TCP_TABLE_OWNER_PID_ALL, 0);
+            IntPtr tcpTablePtr = Marshal.AllocHGlobal(bufferSize);
+
+            try
+            {
+                result = GetExtendedTCPTable(tcpTablePtr, ref bufferSize, true, AF_INET, TCP_TABLE_CLASS.TCP_TABLE_OWNER_PID_ALL, 0);
+                if (result != 0)
+                    return;
+
+                int numEntries = Marshal.ReadInt32(tcpTablePtr); // First 4 bytes = number of entries
+                int rowSize = Marshal.SizeOf(typeof(MIB_TCPROW_OWNER_PID));
+                IntPtr rowPtr = new IntPtr(tcpTablePtr.ToInt64() + 4); // Move past numEntries
+
+                Connections.Clear();
+
+                for (int i = 0; i < numEntries; i++)
+                {
+                    MIB_TCPROW_OWNER_PID tcpRow = (MIB_TCPROW_OWNER_PID)Marshal.PtrToStructure(rowPtr, typeof(MIB_TCPROW_OWNER_PID));
+
+                    NetstatDetails detail = new NetstatDetails();
+                    detail.SourceIP = ConvertToIPAddress(tcpRow.localAddr);
+                    detail.SourcePort = ConvertPort(tcpRow.localPort).ToString();
+                    detail.DestinationIP = ConvertToIPAddress(tcpRow.remoteAddr);
+                    detail.DestinationPort = ConvertPort(tcpRow.remotePort).ToString();
+                    detail.State = ((TcpState)tcpRow.state).ToString();
+                    detail.PID = tcpRow.owningPid.ToString();
+                    detail.ProcessPath = GetProcessPath((int)tcpRow.owningPid);
+
+                    Connections.Add(detail);
+
+                    rowPtr = new IntPtr(rowPtr.ToInt64() + rowSize);
+                }
+
+                ConnectionsCount = Connections.Count;
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(tcpTablePtr);
+            }
+        }
+
+        private string ConvertToIPAddress(uint ipAddr)
+        {
+            byte[] bytes = BitConverter.GetBytes(ipAddr);
+            return string.Format("{0}.{1}.{2}.{3}", bytes[0], bytes[1], bytes[2], bytes[3]);
+        }
+
+        private ushort ConvertPort(uint port)
+        {
+            byte[] bytes = BitConverter.GetBytes(port);
+            return (ushort)((bytes[0] << 8) | bytes[1]);
+        }
+
+        private string GetProcessPath(int pid)
+        {
+            try
+            {
+                Process proc = Process.GetProcessById(pid);
+                return proc.MainModule.FileName;
+            }
+            catch
+            {
+                return "N/A";
+            }
+        }
+
+
+
+        // API Structs and Enums
+        [DllImport("iphlpapi.dll", SetLastError = true)]
+        private static extern uint GetExtendedTCPTable(
+            IntPtr pTcpTable,
+            ref int dwOutBufLen,
+            bool sort,
+            int ipVersion,
+            TCP_TABLE_CLASS tblClass,
+            uint reserved);
+
+        public enum TCP_TABLE_CLASS
+        {
+            TCP_TABLE_BASIC_LISTENER,
+            TCP_TABLE_BASIC_CONNECTIONS,
+            TCP_TABLE_BASIC_ALL,
+            TCP_TABLE_OWNER_PID_LISTENER,
+            TCP_TABLE_OWNER_PID_CONNECTIONS,
+            TCP_TABLE_OWNER_PID_ALL,
+            TCP_TABLE_OWNER_MODULE_LISTENER,
+            TCP_TABLE_OWNER_MODULE_CONNECTIONS,
+            TCP_TABLE_OWNER_MODULE_ALL
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct MIB_TCPROW_OWNER_PID
+        {
+            public uint state;
+            public uint localAddr;
+            public uint localPort;
+            public uint remoteAddr;
+            public uint remotePort;
+            public uint owningPid;
+        }
+
+        public enum TcpState : uint
+        {
+            CLOSED = 1,
+            LISTENING = 2,
+            SYN_SENT = 3,
+            SYN_RECEIVED = 4,
+            ESTABLISHED = 5,
+            FIN_WAIT1 = 6,
+            FIN_WAIT2 = 7,
+            CLOSE_WAIT = 8,
+            CLOSING = 9,
+            LAST_ACK = 10,
+            TIME_WAIT = 11,
+            DELETE_TCB = 12
+        }
+
+
+        //Details Object
+        public class NetstatDetails {
+            public string SourceIP { get; set; }
+            public string SourcePort { get; set; }
+            public string DestinationIP { get; set; }
+            public string DestinationPort { get; set; }
+            public string State { get; set; }
+            public string PID { get; set; }
+            public string ProcessPath { get; set; }
+            
+        }
+    }
 }
 
 
