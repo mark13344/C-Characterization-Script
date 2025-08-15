@@ -23,6 +23,7 @@ using Microsoft.Win32;
 using System.Security.Principal;
 using System.Security.AccessControl;
 using TaskScheduler;
+using NetFwTypeLib;
 
 
 
@@ -1534,6 +1535,102 @@ public class Characterizer {
             public string PID { get; set; }
             public string ProcessPath { get; set; }
             
+        }
+    }
+
+    public class FirewallInfo
+    {
+        public List<FirewallRulesDetails> Rules;
+        public List<FirewallProfileDetails> Profiles;
+
+        public void GetFirewallRules()
+        {
+            try{
+            INetFwPolicy2 policy = (INetFwPolicy2)Activator.CreateInstance(
+                Type.GetTypeFromProgID("HNetCfg.FwPolicy2"));
+
+            foreach (INetFwRule rule in policy.Rules)
+            {
+                FirewallRulesDetails detail = new FirewallRulesDetails();
+
+                detail.Name = rule.Name;
+                detail.Description = rule.Description;
+                detail.Program = rule.ApplicationName;
+                detail.Protocol = rule.Protocol.ToString();
+                detail.LocalIP = rule.LocalAddresses;
+                detail.RemoteIP = rule.RemoteAddresses;
+                detail.Action = rule.Action.ToString();
+                detail.Direction = rule.Direction.ToString();
+                detail.Enabled = rule.Enabled;
+                detail.Profile = ProfileTypesToString(rule.Profiles);
+                detail.Group = rule.Grouping;
+                detail.EdgeTraversal = rule.EdgeTraversal;
+
+                Rules.Add(detail);
+
+            }
+
+         } catch (Exception ex){
+               //
+         }
+
+
+        }
+
+        public void GetFirewallProfileDetails(){
+            FirewallProfileDetails details = new FirewallProfileDetails();
+
+            try{
+                INetFwPolicy2 policy = (INetFwPolicy2)Activator.CreateInstance(
+                    Type.GetTypeFromProgID("HNetCfg.FwPolicy2"));
+
+                int profile = policy.CurrentProfileTypes;
+
+                
+
+            }
+
+        }
+         
+
+
+        //Bitwise operation to determine Profiles
+        private List<string> ProfileTypesToString(int profiles)
+        {
+            List<string> result = new List<string>();
+            if ((profiles & 1) != 0) result.Add("Domain");
+            if ((profiles & 2) != 0) result.Add("Private");
+            if ((profiles & 4) != 0) result.Add("Public");
+            return result;
+        }
+
+        }
+        public class FirewallRulesDetails
+        {
+            public string Direction { get; set; }
+            public string Name { get; set; }
+            public string Description { get; set; }
+            public string Program { get; set; }
+            public string Protocol { get; set; }
+            public string LocalIP { get; set; }
+            public string RemoteIP { get; set; }
+            public string Action { get; set; }
+            public bool Enabled { get; set; }
+            public List<string> Profile { get; set; }
+            public string Group { get; set; }
+            public bool EdgeTraversal { get; set; }
+        }
+
+        public class FirewallProfileDetails
+        {
+            public bool Enabled { get; set; }
+            public string InAction { get; set; }
+            public string OutAction { get; set; }
+            public bool LoggingEnabled { get; set; }
+            public string LogPath { get; set; }
+            public int MaxLogSize { get; set; }
+            public int LogsDropped { get; set; }
+            public int SuccessfulConnections { get; set; }
         }
     }
 }
