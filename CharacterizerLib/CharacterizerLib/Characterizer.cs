@@ -1323,7 +1323,8 @@ public class Characterizer {
         }
 
         public void Refresh() {
-            //Can be called to renew information
+            LoadTcpConnections();
+            LoadUdpConnections();
         }
 
 
@@ -1331,20 +1332,21 @@ public class Characterizer {
         {
             int AF_INET = 2;
             int bufferSize = 0;
-
-            uint result = GetExtendedTCPTable(IntPtr.Zero, ref bufferSize, true, AF_INET, TCP_TABLE_CLASS.TCP_TABLE_OWNER_PID_ALL, 0);
+            //Get buffer size
+            uint result = GetExtendedTcpTable(IntPtr.Zero, ref bufferSize, true, AF_INET, TCP_TABLE_CLASS.TCP_TABLE_OWNER_PID_ALL, 0);
             IntPtr tcpTablePtr = Marshal.AllocHGlobal(bufferSize);
 
             try
             {
-                result = GetExtendedTCPTable(tcpTablePtr, ref bufferSize, true, AF_INET, TCP_TABLE_CLASS.TCP_TABLE_OWNER_PID_ALL, 0);
+                //Recall with buffer and check for error code
+                result = GetExtendedTcpTable(tcpTablePtr, ref bufferSize, true, AF_INET, TCP_TABLE_CLASS.TCP_TABLE_OWNER_PID_ALL, 0);
                 if (result != 0)
                     return;
 
                 int numEntries = Marshal.ReadInt32(tcpTablePtr); // First 4 bytes = number of entries
                 int rowSize = Marshal.SizeOf(typeof(MIB_TCPROW_OWNER_PID));
                 IntPtr rowPtr = new IntPtr(tcpTablePtr.ToInt64() + 4); // Move past numEntries
-
+                //Clear old connections
                 Connections.Clear();
 
                 for (int i = 0; i < numEntries; i++)
@@ -1352,6 +1354,7 @@ public class Characterizer {
                     MIB_TCPROW_OWNER_PID tcpRow = (MIB_TCPROW_OWNER_PID)Marshal.PtrToStructure(rowPtr, typeof(MIB_TCPROW_OWNER_PID));
 
                     NetstatDetails detail = new NetstatDetails();
+                    detail.Protocol = "TCP";
                     detail.SourceIP = ConvertToIPAddress(tcpRow.localAddr);
                     detail.SourcePort = ConvertPort(tcpRow.localPort).ToString();
                     detail.DestinationIP = ConvertToIPAddress(tcpRow.remoteAddr);
@@ -1370,6 +1373,49 @@ public class Characterizer {
             finally
             {
                 Marshal.FreeHGlobal(tcpTablePtr);
+            }
+        }
+
+        private void LoadUdpConnections()
+        {
+            int AF_INET = 2;
+            int buffersize = 0;
+
+            uint result = GetExtendedUdpTable(IntPtr.Zero, ref buffersize, true, AF_INET, UDP_TABLE_CLASS.UDP_TABLE_OWNER_PID, 0);
+            IntPtr udpTablePtr = Marshal.AllocHGlobal(buffersize);
+
+            try
+            {
+                result = GetExtendedUdpTable(udpTablePtr, ref buffersize, true, AF_INET, UDP_TABLE_CLASS.UDP_TABLE_OWNER_PID, 0);
+                if (result != 0)
+                    return;
+
+                int numEntries = Marshal.ReadInt32(udpTablePtr);
+                int rowSize = Marshal.SizeOf(typeof(MIB_UDPROW_OWNER_PID));
+                IntPtr rowPtr = new IntPtr(udpTablePtr.ToInt64() + 4);
+
+                for (int i = 0; i < numEntries; i++)
+                {
+                    MIB_UDPROW_OWNER_PID udpRow = (MIB_UDPROW_OWNER_PID)Marshal.PtrToStructure(rowPtr, typeof(MIB_UDPROW_OWNER_PID));
+
+                    NetstatDetails detail = new NetstatDetails();
+                    detail.SourceIP = ConvertToIPAddress(udpRow.localAddr);
+                    detail.SourcePort = ConvertPort(udpRow.localPort).ToString();
+                    detail.DestinationIP = "N/A"; // UDP is connectionless
+                    detail.DestinationPort = "N/A";
+                    detail.State = "N/A"; // UDP has no state
+                    detail.PID = udpRow.owningPid.ToString();
+                    detail.ProcessPath = GetProcessPath((int)udpRow.owningPid);
+                    detail.Protocol = "UDP"; 
+
+                    Connections.Add(detail);
+
+                    rowPtr = new IntPtr(rowPtr.ToInt64() + rowSize);
+                }
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(udpTablePtr);
             }
         }
 
@@ -1401,8 +1447,10 @@ public class Characterizer {
 
 
         // API Structs and Enums
+
+        //TCP Calls
         [DllImport("iphlpapi.dll", SetLastError = true)]
-        private static extern uint GetExtendedTCPTable(
+        private static extern uint GetExtendedTcpTable(
             IntPtr pTcpTable,
             ref int dwOutBufLen,
             bool sort,
@@ -1450,9 +1498,34 @@ public class Characterizer {
             DELETE_TCB = 12
         }
 
+        //UDP Calls
+        [DllImport("iphlpapi.dll", SetLastError = true)]
+        private static extern uint GetExtendedUdpTable(
+            IntPtr pUdpTable,
+            ref int dwOutBufLen,
+            bool sort,
+            int ipVersion,
+            UDP_TABLE_CLASS tableClass,
+            uint reserved);
+        
+        public enum UDP_TABLE_CLASS
+        {
+            UDP_TABLE_BASIC,
+            UDP_TABLE_OWNER_PID,
+            UDP_TABLE_OWNER_MODULE
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct MIB_UDPROW_OWNER_PID
+        {
+            public uint localAddr;
+            public uint localPort;
+            public uint owningPid;
+        }
 
         //Details Object
         public class NetstatDetails {
+            public string Protocol { get; set; }
             public string SourceIP { get; set; }
             public string SourcePort { get; set; }
             public string DestinationIP { get; set; }
