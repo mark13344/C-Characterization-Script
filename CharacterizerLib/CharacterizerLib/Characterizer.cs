@@ -1656,7 +1656,8 @@ namespace CharacterizerLib
                 GetFirewallProfileDetails();
             }
 
-            public void GetFirewallRules()
+            //Gather Rules
+            private void GetFirewallRules()
             {
                 Rules.Clear();
                 try
@@ -1696,13 +1697,13 @@ namespace CharacterizerLib
                 }
                 catch (Exception ex)
                 {
-                    //
+                    Console.WriteLine("Error Collecting Rules: {0}", ex);
                 }
 
 
             }
-
-            public void GetFirewallProfileDetails()
+            //Gather Profiles Settings
+            private void GetFirewallProfileDetails()
             {
                 Profiles.Clear();
                 try
@@ -1775,6 +1776,8 @@ namespace CharacterizerLib
 
 
             }
+
+            //Class Objects
             public class FirewallRulesDetails
             {
                 public string Direction { get; set; }
@@ -1852,6 +1855,68 @@ namespace CharacterizerLib
             }
         }
 
+        public class RunInfo{
+            public List<RunDetails> RunResults;
+
+
+            /*public static string[] targets = {
+                @"HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Run",
+                @"HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\RunOnce",
+                @"HKEY_LOCAL_MACHINE\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Run"};*/
+
+
+            public RunInfo()
+            {
+                RunResults = new List<RunDetails>();
+                Refresh();
+            }
+            
+            public void Refresh(){
+                GetCurrentUser();
+            }
+
+            private void GetCurrentUser()
+            {
+                RegistryKey baseKey = Registry.CurrentUser;
+
+                string[] targets = {@"Software\Microsoft\Windows\CurrentVersion\Run",
+                @"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\RunOnce"};
+
+                
+                for(int i = 0; i < targets.Length; i++){
+
+                    using (RegistryKey targetKey = baseKey.OpenSubKey(targets[i]))
+                    {
+                        if (targetKey != null)
+                        {
+                            string[] valueNames = targetKey.GetValueNames();
+
+                            for (int j = 0; j < valueNames.Length; j++)
+                            {
+                                string name = valueNames[j];
+                                object val = targetKey.GetValue(name);
+
+                                RunDetails detail = new RunDetails();
+                                detail.key = "HKEY_CURRENT_USER\\" + targets[i];
+                                detail.value = val != null ? val.ToString() : "";
+
+                                RunResults.Add(detail);
+                            }
+
+                        }
+
+                    }
+                
+
+                }
+            }
+
+            public class RunDetails
+            {
+                public string key { get; set; }
+                public string value { get; set; }
+            }
+        }
 
 
 
