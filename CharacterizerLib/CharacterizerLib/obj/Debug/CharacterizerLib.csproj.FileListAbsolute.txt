@@ -16,3 +16,5 @@ C:\Users\Developr\Documents\GitHub\C-Characterization-Script\CharacterizerLib\Ch
 C:\Users\Mark\Documents\GitHub\C-Characterization-Script\CharacterizerLib\CharacterizerLib\bin\Debug\Interop.TaskScheduler.dll
 C:\Users\Mark\Documents\GitHub\C-Characterization-Script\CharacterizerLib\CharacterizerLib\obj\Debug\Interop.TaskScheduler.dll
 C:\Users\Mark\Documents\GitHub\C-Characterization-Script\CharacterizerLib\CharacterizerLib\obj\Debug\CharacterizerLib.csproj.ResolveComReference.cache
+C:\Users\Mark\Documents\GitHub\C-Characterization-Script\CharacterizerLib\CharacterizerLib\obj\Debug\Interop.NetFwTypeLib.dll
+C:\Users\Mark\Documents\GitHub\C-Characterization-Script\CharacterizerLib\CharacterizerLib\bin\Debug\Interop.NetFwTypeLib.dll
