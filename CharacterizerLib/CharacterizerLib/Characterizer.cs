@@ -6,7 +6,7 @@
  * 
  * To change this template use Tools | Options | Coding | Edit Standard Headers.
  */
-using System; 
+using System;
 using System.Diagnostics;
 using System.Collections.Generic;
 using System.Net;
@@ -24,6 +24,8 @@ using System.Security.Principal;
 using System.Security.AccessControl;
 using TaskScheduler;
 using NetFwTypeLib;
+using IW = IWshRuntimeLibrary;
+
 
 
 
@@ -1855,72 +1857,284 @@ namespace CharacterizerLib
             }
         }
 
-        public class RunInfo{
-            public List<RunDetails> RunResults;
+        public class RegistryInfo
+        {
+            public List<RegistryDetails> RegistryResults;
+            public int RegistryCount;
 
 
-            /*public static string[] targets = {
-                @"HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Run",
-                @"HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\RunOnce",
-                @"HKEY_LOCAL_MACHINE\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Run"};*/
-
-
-            public RunInfo()
+            public RegistryInfo()
             {
-                RunResults = new List<RunDetails>();
+                RegistryResults = new List<RegistryDetails>();
                 Refresh();
             }
-            
-            public void Refresh(){
-                GetCurrentUser();
+
+            public void Refresh()
+            {
+                RegistryResults.Clear();
+                RegistryCount = 0;
+                // Run keys
+                        ScanRegistryKeys(Registry.LocalMachine, "HKEY_LOCAL_MACHINE", new string[] {
+                @"Software\Microsoft\Windows\CurrentVersion\Run",
+                @"Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Run"
+            }, "Persistence via Run key");
+
+                        ScanRegistryKeys(Registry.CurrentUser, "HKEY_CURRENT_USER", new string[] {
+                @"Software\Microsoft\Windows\CurrentVersion\Run"
+            }, "Persistence via Run key");
+
+                        // RunOnce keys
+                        ScanRegistryKeys(Registry.LocalMachine, "HKEY_LOCAL_MACHINE", new string[] {
+                @"Software\Microsoft\Windows\CurrentVersion\RunOnce"
+            }, "One-time execution persistence");
+
+                        ScanRegistryKeys(Registry.CurrentUser, "HKEY_CURRENT_USER", new string[] {
+                @"Software\Microsoft\Windows\CurrentVersion\RunOnce"
+            }, "One-time execution persistence");
+
+                        // Winlogon - Shell hijack
+                        ScanRegistryKeys(Registry.LocalMachine, "HKEY_LOCAL_MACHINE", new string[] {
+                @"Software\Microsoft\Windows NT\CurrentVersion\Winlogon"
+            }, "Shell or userinit hijack");
+
+                        // Session Manager
+                        ScanRegistryKeys(Registry.LocalMachine, "HKEY_LOCAL_MACHINE", new string[] {
+                @"SYSTEM\CurrentControlSet\Control\Session Manager"
+            }, "BootExecute - possible persistence or tampering");
+
+                        // Command Processor autorun
+                        ScanRegistryKeys(Registry.LocalMachine, "HKEY_LOCAL_MACHINE", new string[] {
+                @"Software\Microsoft\Command Processor"
+            }, "AutoRun command line persistence");
+
+                        ScanRegistryKeys(Registry.CurrentUser, "HKEY_CURRENT_USER", new string[] {
+                @"Software\Microsoft\Command Processor"
+            }, "AutoRun command line persistence");
+
+                        // Load value (legacy)
+                        ScanRegistryKeys(Registry.CurrentUser, "HKEY_CURRENT_USER", new string[] {
+                @"Software\Microsoft\Windows NT\CurrentVersion\Windows"
+            }, "Load value - legacy autorun/persistence");
             }
 
-            private void GetCurrentUser()
+
+            private void ScanRegistryKeys(RegistryKey baseKey, string basePath, string[] subPaths, string possibleIoc)
             {
-                RegistryKey baseKey = Registry.CurrentUser;
-
-                string[] targets = {@"Software\Microsoft\Windows\CurrentVersion\Run",
-                @"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\RunOnce"};
-
-                
-                for(int i = 0; i < targets.Length; i++){
-
-                    using (RegistryKey targetKey = baseKey.OpenSubKey(targets[i]))
+                foreach (string subPath in subPaths)
+                {
+                    using (RegistryKey targetKey = baseKey.OpenSubKey(subPath))
                     {
                         if (targetKey != null)
                         {
-                            string[] valueNames = targetKey.GetValueNames();
-
-                            for (int j = 0; j < valueNames.Length; j++)
+                            foreach (string name in targetKey.GetValueNames())
                             {
-                                string name = valueNames[j];
                                 object val = targetKey.GetValue(name);
 
-                                RunDetails detail = new RunDetails();
-                                detail.key = "HKEY_CURRENT_USER\\" + targets[i];
-                                detail.value = val != null ? val.ToString() : "";
+                                RegistryDetails detail = new RegistryDetails();
+                                detail.Key = basePath + "\\" + subPath;
+                                detail.Name = name;
+                                if (val != null)
+                                {
+                                    if (val is string[])
+                                    {
+                                        detail.Value = string.Join("; ", (string[])val);
+                                    }
+                                    else
+                                    {
+                                        detail.Value = val.ToString();
+                                    }
 
-                                RunResults.Add(detail);
+                                }
+                                else
+                                {
+                                    detail.Value = "";
+                                }
+                                detail.PossibleIoc = possibleIoc;
+                                
+
+                                RegistryResults.Add(detail);
+
                             }
 
                         }
-
                     }
-                
+                }
+                RegistryCount += RegistryResults.Count;
+            }
 
+            
+
+            public class RegistryDetails
+            {
+                public string Key { get; set; }
+                public string Name { get; set; }
+                public string Value { get; set; }
+                public string PossibleIoc { get; set; }
+            }
+        }
+
+        public class ModulesInfo{
+            public List<ModuleDetails> Modules;
+
+            public ModulesInfo()
+            {
+                Modules = new List<ModuleDetails>();
+                Refresh();
+            }
+
+            public void Refresh()
+            {
+                Modules.Clear();
+                foreach (Process proc in Process.GetProcesses())
+                {
+                    try
+                    {
+                        foreach (ProcessModule module in proc.Modules)
+                        {
+                            string modulePath = module.FileName;
+
+                            ModuleDetails detail = new ModuleDetails();
+                            detail.ProcessName = proc.ProcessName;
+                            detail.ModuleName = module.ModuleName;
+                            detail.ModulePath = modulePath;
+                            detail.Hash = ComputeSHA256(modulePath);
+
+                            SignatureInfo sig = SignatureHelper.GetSignatureInfo(modulePath);
+                            detail.SignatureStatus = sig.IsTrusted ? "Trusted" : "Untrusted or unsigned";
+                            detail.SignerName = sig.SignerName;
+
+                            // IOC heuristics
+                            string pathLower = modulePath.ToLower();
+                            if (pathLower.Contains(@"\appdata\") || pathLower.Contains(@"\temp\") || pathLower.Contains(@"\public\"))
+                            {
+                                detail.PossibleIoc = "Loaded from user-writable directory";
+                            }
+                            else if (!pathLower.StartsWith(Environment.SystemDirectory.ToLower()))
+                            {
+                                detail.PossibleIoc = "Non-standard module path";
+                            }
+                            else if (!sig.IsTrusted)
+                            {
+                                detail.PossibleIoc = "Unsigned or untrusted module";
+                            }
+                            else
+                            {
+                                detail.PossibleIoc = "";
+                            }
+
+                            Modules.Add(detail);
+
+                        }
+                    }
+                    catch
+                    {
+                        continue;
+                    }
                 }
             }
 
-            public class RunDetails
+            private string ComputeSHA256(string filepath)
+            {	//Read in file and create SHA256 hash based on bytes read
+                try
+                {
+                    using (FileStream stream = File.Open(filepath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                    using (SHA256 sha = SHA256.Create())
+                    {
+                        byte[] hash = sha.ComputeHash(stream);
+                        return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+                    }
+                }
+                catch
+                {
+                    return "SHA Error";
+                }
+            }
+
+
+            public class ModuleDetails
             {
-                public string key { get; set; }
-                public string value { get; set; }
+                public string ProcessName { get; set; }
+                public string ModuleName { get; set; }
+                public string ModulePath { get; set; }
+                public string Hash { get; set; }
+                public string SignatureStatus { get; set; }
+                public string SignerName { get; set; }
+                public string PossibleIoc { get; set; }
+
+            }
+        }
+
+        public class StartUpInfo
+        {
+            public List<StartupDetails> CollectStartupItems()
+            {
+                string[] startUpDirs = {
+                    Environment.GetFolderPath(Environment.SpecialFolder.Startup),
+                    Path.Combine(Environment.GetEnvironmentVariable("ProgramData"),
+                    @"Microsoft\Windows\Start Menu\Programs\Startup")
+                                       };
+
+
+                foreach (string dir in startUpDirs)
+                {
+                    if (!Directory.Exists(dir)) continue;
+
+                    foreach (string file in Directory.GetFiles(dir)
+                    {
+                        try{
+                            FileInfo fi = new FileInfo(file);
+                            StartupDetails detail = new StartupDetails();
+
+                            detail.Name = fi.Name;
+                            detail.FullPath = fi.FullName;
+                            detail.Extention = fi.Extension.ToLower();
+                            detail.Size = fi.Length;
+                            detail.CreationTimeUtc = fi.CreationTimeUtc;
+                            detail.LastWriteTimeUtc = fi.LastWriteTimeUtc;
+                            detail.IsHidden = (fi.Attributes & FileAttributes.Hidden) != 0;
+                            detail.IsSystem = (fi.Attributes & FileAttributes.System) != 0;
+
+                            detail.Hash = ComputeSHA256(file);
+                        }
+                    }
+                }
+            }
+
+            public class StartupDetails
+            {
+                public string Name { get; set; }
+                public string FullPath { get; set; }
+                public string Extention { get; set; }
+                public long Size { get; set; }
+                public string Hash { get; set; }
+                public string SignatureStatus { get; set; }
+                public string SignerName { get; set; }
+                public DateTime CreationTimeUtc { get; set; }
+                public DateTime LastWriteTimeUtc { get; set; }
+                public string TargetPath { get; set; }
+                public bool IsHidden { get; set; }
+                public bool IsSystem { get; set; }
+                public string PossibleIoc { get; set; }
             }
         }
 
 
-
-
+        public static string ComputeSHA256(string filepath)
+        {	//Read in file and create SHA256 hash based on bytes read
+            try
+            {
+                using (FileStream stream = File.Open(filepath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                using (SHA256 sha = SHA256.Create())
+                {
+                    byte[] hash = sha.ComputeHash(stream);
+                    return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+                }
+            }
+            catch
+            {
+                return "SHA Error";
+            }
+        }
 
     }
 
