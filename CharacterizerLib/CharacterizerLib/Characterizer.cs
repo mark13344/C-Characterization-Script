@@ -6,7 +6,7 @@
  * 
  * To change this template use Tools | Options | Coding | Edit Standard Headers.
  */
-using System; 
+using System;
 using System.Diagnostics;
 using System.Collections.Generic;
 using System.Net;
@@ -1855,14 +1855,13 @@ namespace CharacterizerLib
             }
         }
 
-        public class RunInfo{
+        public class RunInfo
+        {
             public List<RunDetails> RunResults;
 
 
             /*public static string[] targets = {
-                @"HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Run",
-                @"HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\RunOnce",
-                @"HKEY_LOCAL_MACHINE\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Run"};*/
+              "};*/
 
 
             public RunInfo()
@@ -1870,9 +1869,46 @@ namespace CharacterizerLib
                 RunResults = new List<RunDetails>();
                 Refresh();
             }
-            
-            public void Refresh(){
+
+            public void Refresh()
+            {
+                RunResults.Clear();
+                GetLocalMachine();
                 GetCurrentUser();
+            }
+
+            private void GetLocalMachine()
+            {
+                RegistryKey baseKey = Registry.LocalMachine;
+
+                string[] targets = {
+                      @"Software\Microsoft\Windows\CurrentVersion\Run",
+                    @"Software\Microsoft\Windows\CurrentVersion\RunOnce",
+                    @"Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Run"
+                                   };
+
+
+                for (int i = 0; i < targets.Length; i++)
+                {
+                    using (RegistryKey targetKey = baseKey.OpenSubKey(targets[i])){
+                        if (targetKey != null){
+                            string[] valueNames = targetKey.GetValueNames();
+
+                            for(int j = 0; j < valueNames.Length; j++){
+                                object val = targetKey.GetValue(valueNames[j]);
+
+                                RunDetails detail = new RunDetails();
+                                detail.key = "HKEY_LOCAL_MACHINE\\" + targets[i];
+                                detail.value = val != null ? val.ToString() : "";
+
+                                RunResults.Add(detail);
+                            }
+
+                        }
+                    }
+
+                }
+
             }
 
             private void GetCurrentUser()
@@ -1880,10 +1916,11 @@ namespace CharacterizerLib
                 RegistryKey baseKey = Registry.CurrentUser;
 
                 string[] targets = {@"Software\Microsoft\Windows\CurrentVersion\Run",
-                @"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\RunOnce"};
+                @"Software\Microsoft\Windows\CurrentVersion\RunOnce"};
 
-                
-                for(int i = 0; i < targets.Length; i++){
+
+                for (int i = 0; i < targets.Length; i++)
+                {
 
                     using (RegistryKey targetKey = baseKey.OpenSubKey(targets[i]))
                     {
@@ -1906,7 +1943,7 @@ namespace CharacterizerLib
                         }
 
                     }
-                
+
 
                 }
             }
