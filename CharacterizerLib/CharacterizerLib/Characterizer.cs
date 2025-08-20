@@ -2066,7 +2066,21 @@ namespace CharacterizerLib
 
         public class StartUpInfo
         {
-            public List<StartupDetails> CollectStartupItems()
+            public List<StartupDetails> StartUpItems;
+
+            public StartUpInfo()
+            {
+                StartUpItems = new List<StartupDetails>();
+                Refresh();
+            }
+
+            public void Refresh()
+            {
+                StartUpItems.Clear();
+                CollectStartupItems();
+            }
+
+            public void CollectStartupItems()
             {
                 string[] startUpDirs = {
                     Environment.GetFolderPath(Environment.SpecialFolder.Startup),
@@ -2079,7 +2093,7 @@ namespace CharacterizerLib
                 {
                     if (!Directory.Exists(dir)) continue;
 
-                    foreach (string file in Directory.GetFiles(dir)
+                    foreach (string file in Directory.GetFiles(dir))
                     {
                         try{
                             FileInfo fi = new FileInfo(file);
@@ -2095,6 +2109,14 @@ namespace CharacterizerLib
                             detail.IsSystem = (fi.Attributes & FileAttributes.System) != 0;
 
                             detail.Hash = ComputeSHA256(file);
+
+                            SignatureInfo sig = SignatureHelper.GetSignatureInfo(file);
+                            detail.SignatureStatus = sig.IsTrusted ? "Trusted" : "Untrusted";
+                            detail.SignerName = sig.SignerName;
+
+                            StartUpItems.Add(detail);
+                        } catch {
+                            continue;
                         }
                     }
                 }
