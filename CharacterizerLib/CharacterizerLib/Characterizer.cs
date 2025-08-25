@@ -2436,6 +2436,180 @@ namespace CharacterizerLib
                 out long lpftLastWriteTime);
         }
 
+        //Currently Limited to session Pipes
+        public class NamedPipeInfo
+        {
+            public List<NamedPipeDetails> Pipes { get; private set; }
+
+            public NamedPipeInfo()
+            {
+                Pipes = new List<NamedPipeDetails>();
+                Refresh();
+            }
+
+            public void Refresh()
+            {
+                Pipes.Clear();
+
+                WIN32_FIND_DATA findData;
+                IntPtr findHandle = FindFirstFile(@"\\.\pipe\*", out findData);
+
+                if (findHandle == INVALID_HANDLE_VALUE)
+                    return;
+
+                do
+                {
+                    string pipeName = findData.cFileName;
+                    if (!IsHumanReadable(pipeName))
+                        continue;
+
+                    NamedPipeDetails details = new NamedPipeDetails();
+                   
+
+                    details.Name = pipeName;
+                    details.Path = @"\\.\pipe\" + pipeName;
+
+                    IntPtr hPipe = CreateFile(
+                        @"\\.\pipe\" + pipeName,
+                        0, // no access (just to get handle)
+                        0,
+                        IntPtr.Zero,
+                        OPEN_EXISTING,
+                        0,
+                        IntPtr.Zero);
+                    if (hPipe != INVALID_HANDLE_VALUE)
+                    {
+                        FILETIME ftCreate, ftAccess, ftWrite;
+
+                        if (GetFileTime(hPipe, out ftCreate, out ftAccess, out ftWrite))
+                        {
+                            details.CreationTimeUtc = FileTimeToDateTimeUtc(ftCreate);
+                            details.LastAccessTimeUtc = FileTimeToDateTimeUtc(ftAccess);
+                            details.LastWriteTimeUtc = FileTimeToDateTimeUtc(ftWrite);
+                        }
+
+                        CloseHandle(hPipe);
+                    }
+                    Pipes.Add(details);
+
+                } while (FindNextFile(findHandle, out findData));
+                FindClose(findHandle);
+            }
+
+            private static DateTime FileTimeToDateTimeUtc(FILETIME ft)
+            {
+                long high = ((long)ft.dwHighDateTime) << 32;
+                long fileTime = high | (uint)ft.dwLowDateTime;
+                return DateTime.FromFileTimeUtc(fileTime);
+            }
+            
+            private static bool IsHumanReadable(string input)
+            {
+                if (string.IsNullOrEmpty(input))
+                    return false;
+
+                int total = input.Length;
+                int printable = 0;
+                int ascii = 0;
+                int lettersOrDigits = 0;
+
+                foreach (char c in input)
+                {
+                    if (!char.IsControl(c))
+                        printable++;
+
+                    if (c >= 32 && c < 127) // Basic ASCII printable range
+                        ascii++;
+
+                    if (char.IsLetterOrDigit(c))
+                        lettersOrDigits++;
+                }
+
+                // Apply heuristics
+                double asciiRatio = (double)ascii / total;
+                double printableRatio = (double)printable / total;
+
+                return
+                    asciiRatio >= 0.75 &&
+                    printableRatio >= 0.9 &&
+                    lettersOrDigits >= 2;
+            }
+
+           
+            
+
+            public class NamedPipeDetails
+            {
+                public string Name { get; set; }
+                public string Path { get; set; }
+                public DateTime? CreationTimeUtc { get; set; }
+                public DateTime? LastAccessTimeUtc { get; set; }
+                public DateTime? LastWriteTimeUtc { get; set; }
+            }
+
+
+            //API Constants and Calls
+            private const int MAX_PATH = 260;
+            private static readonly IntPtr INVALID_HANDLE_VALUE = new IntPtr(-1);
+            private const uint OPEN_EXISTING = 3;
+            private const uint FILE_FLAG_BACKUP_SEMANTICS = 0x02000000;
+
+            [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+            private struct WIN32_FIND_DATA
+            {
+                public uint dwFileAttributes;
+                public System.Runtime.InteropServices.ComTypes.FILETIME ftCreationTime;
+                public System.Runtime.InteropServices.ComTypes.FILETIME ftLastAccessTime;
+                public System.Runtime.InteropServices.ComTypes.FILETIME ftLastWriteTime;
+                public uint nFileSizeHigh;
+                public uint nFileSizeLow;
+                public uint dwReserved0;
+                public uint dwReserved1;
+
+                [MarshalAs(UnmanagedType.ByValTStr, SizeConst = MAX_PATH)]
+                public string cFileName;
+
+                [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 14)]
+                public string cAlternateFileName;
+            }
+
+            [StructLayout(LayoutKind.Sequential)]
+            private struct FILETIME
+            {
+                public uint dwLowDateTime;
+                public uint dwHighDateTime;
+            }
+
+            [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+            private static extern IntPtr FindFirstFile(string lpFileName, out WIN32_FIND_DATA lpFindFileData);
+
+            [DllImport("kernel32.dll", SetLastError = true)]
+            private static extern bool FindNextFile(IntPtr hFindFile, out WIN32_FIND_DATA lpFindFileData);
+
+            [DllImport("kernel32.dll", SetLastError = true)]
+            private static extern bool FindClose(IntPtr hFindFile);
+
+            [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+            private static extern IntPtr CreateFile(
+                string lpFileName,
+                uint dwDesiredAccess,
+                uint dwShareMode,
+                IntPtr lpSecurityAttributes,
+                uint dwCreationDisposition,
+                uint dwFlagsAndAttributes,
+                IntPtr hTemplateFile);
+
+            [DllImport("kernel32.dll", SetLastError = true)]
+            private static extern bool GetFileTime(
+                IntPtr hFile,
+                out FILETIME lpCreationTime,
+                out FILETIME lpLastAccessTime,
+                out FILETIME lpLastWriteTime);
+
+            [DllImport("kernel32.dll", SetLastError = true)]
+            private static extern bool CloseHandle(IntPtr hObject);
+        }
+
         public static string ComputeSHA256(string filepath)
         {	//Read in file and create SHA256 hash based on bytes read
             try
