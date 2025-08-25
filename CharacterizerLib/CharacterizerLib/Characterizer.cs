@@ -94,7 +94,7 @@ namespace CharacterizerLib
         public class ProcessInfo
         {
             public List<ProcDetails> Processes { get; private set; }
-            public int ProcessCount { get; private set; }
+            public int Count { get; private set; }
 
 
             public ProcessInfo()
@@ -106,7 +106,7 @@ namespace CharacterizerLib
 
             public override string ToString()
             {
-                return base.ToString() + string.Format("\n[ProcessInfo ProcessCount={0}]", ProcessCount);
+                return base.ToString() + string.Format("\n[ProcessInfo ProcessCount={0}]", Count);
             }
 
             public void Refresh()
@@ -166,7 +166,7 @@ namespace CharacterizerLib
                     Processes.Add(proc);
                 }
 
-                ProcessCount = Processes.Count;
+                Count = Processes.Count;
             }
 
 
@@ -268,7 +268,7 @@ namespace CharacterizerLib
         public class ServiceInfo
         {
             public List<ServiceDetails> Services;
-            public int ServiceCount;
+            public int Count;
 
             public ServiceInfo()
             {
@@ -334,7 +334,7 @@ namespace CharacterizerLib
                     //error
                 }
 
-                ServiceCount = Services.Count;
+                Count = Services.Count;
 
 
 
@@ -356,7 +356,7 @@ namespace CharacterizerLib
         {
 
             public List<UserDetails> Users { get; private set; }
-            public int UsersCount { get; private set; }
+            public int Count { get; private set; }
 
             public UserInfo()
             {
@@ -389,7 +389,7 @@ namespace CharacterizerLib
                         Users.Add(detailed);
                         currentPtr = new IntPtr(currentPtr.ToInt64() + structsize);
                     }
-                    UsersCount = Users.Count;
+                    Count = Users.Count;
                     //Free Created Buffer
                     NetApiBufferFree(buffer);
                 }
@@ -550,7 +550,7 @@ namespace CharacterizerLib
         public class GroupInfo
         {
             public List<GroupDetails> Groups { get; private set; }
-            public int GroupCount { get; private set; }
+            public int Count { get; private set; }
 
             public GroupInfo()
             {
@@ -595,7 +595,7 @@ namespace CharacterizerLib
 
                     NetApiBufferFree(buffer);
                 }
-                GroupCount = Groups.Count;
+                Count = Groups.Count;
             }
 
             public List<string> GetGroupMembers(string groupname)
@@ -697,7 +697,7 @@ namespace CharacterizerLib
         public class NetShareInfo
         {
             public List<NetShareDetails> Shares { get; private set; }
-            public int ShareCount { get; private set; }
+            public int Count { get; private set; }
 
             public NetShareInfo()
             {
@@ -753,7 +753,7 @@ namespace CharacterizerLib
 
                 if (buffer != IntPtr.Zero)
                     NetApiBufferFree(buffer);
-                ShareCount = Shares.Count;
+                Count = Shares.Count;
 
             }
 
@@ -954,7 +954,7 @@ namespace CharacterizerLib
         public class SchTaskInfo
         {
             public List<ScheduledTask> Tasks { get; private set; }
-            public int TaskCount { get; private set; }
+            public int Count { get; private set; }
 
             public SchTaskInfo()
             {
@@ -1030,6 +1030,8 @@ namespace CharacterizerLib
 
                     Tasks.Add(taskEntry);
                 }
+
+                Count = Tasks.Count;
 
                 ITaskFolderCollection subFolders = folder.GetFolders(0);
                 for (int i = 1; i <= subFolders.Count; i++)
@@ -1161,7 +1163,7 @@ namespace CharacterizerLib
         public class DriverInfo
         {
             public List<DriverDetails> details { get; set; }
-            public int detailsCount { get; set; }
+            public int Count { get; set; }
 
             //Service type constants
             const int SERVICE_KERNEL_DRIVER = 0x00000001;
@@ -1265,7 +1267,7 @@ namespace CharacterizerLib
                 Marshal.FreeHGlobal(buffer);
                 CloseServiceHandle(scmHandle);
 
-                detailsCount = details.Count;
+                Count = details.Count;
 
             }
 
@@ -1415,7 +1417,7 @@ namespace CharacterizerLib
         {
             //Class Attributes
             public List<NetstatDetails> Connections { get; set; }
-            public int ConnectionsCount { get; set; }
+            public int Count { get; set; }
 
             public NetstatInfo()
             {
@@ -1470,7 +1472,7 @@ namespace CharacterizerLib
                         rowPtr = new IntPtr(rowPtr.ToInt64() + rowSize);
                     }
 
-                    ConnectionsCount = Connections.Count;
+                    Count = Connections.Count;
                 }
                 finally
                 {
@@ -1644,6 +1646,7 @@ namespace CharacterizerLib
         {
             public List<FirewallRulesDetails> Rules;
             public List<FirewallProfileDetails> Profiles;
+            public int Count;
 
             public FirewallInfo()
             {
@@ -1695,7 +1698,7 @@ namespace CharacterizerLib
                         Rules.Add(detail);
 
                     }
-
+                    Count = Rules.Count;
                 }
                 catch (Exception ex)
                 {
@@ -1860,7 +1863,7 @@ namespace CharacterizerLib
         public class RegistryInfo
         {
             public List<RegistryDetails> RegistryResults;
-            public int RegistryCount;
+            public int Count;
 
 
             public RegistryInfo()
@@ -1872,7 +1875,7 @@ namespace CharacterizerLib
             public void Refresh()
             {
                 RegistryResults.Clear();
-                RegistryCount = 0;
+                Count = 0;
                 // Run keys
                         ScanRegistryKeys(Registry.LocalMachine, "HKEY_LOCAL_MACHINE", new string[] {
                 @"Software\Microsoft\Windows\CurrentVersion\Run",
@@ -1959,7 +1962,7 @@ namespace CharacterizerLib
                         }
                     }
                 }
-                RegistryCount += RegistryResults.Count;
+                Count += RegistryResults.Count;
             }
 
             
@@ -1975,6 +1978,7 @@ namespace CharacterizerLib
 
         public class ModulesInfo{
             public List<ModuleDetails> Modules;
+            public int Count;
 
             public ModulesInfo()
             {
@@ -2030,24 +2034,7 @@ namespace CharacterizerLib
                     {
                         continue;
                     }
-                }
-            }
-
-            private string ComputeSHA256(string filepath)
-            {	//Read in file and create SHA256 hash based on bytes read
-                try
-                {
-                    using (FileStream stream = File.Open(filepath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
-                    using (SHA256 sha = SHA256.Create())
-                    {
-                        byte[] hash = sha.ComputeHash(stream);
-                        return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
-                    }
-                }
-                catch
-                {
-                    return "SHA Error";
-                }
+                } Count = Modules.Count;
             }
 
 
@@ -2067,6 +2054,7 @@ namespace CharacterizerLib
         public class StartUpInfo
         {
             public List<StartupDetails> StartUpItems;
+            public int Count;
 
             public StartUpInfo()
             {
@@ -2120,6 +2108,7 @@ namespace CharacterizerLib
                         }
                     }
                 }
+                Count = StartUpItems.Count;
             }
 
             public class StartupDetails
@@ -2140,6 +2129,137 @@ namespace CharacterizerLib
             }
         }
 
+        public class InstalledAppsInfo
+        {
+
+            public List<InstalledAppDetails> InstalledApps;
+            public int Count;
+
+            public InstalledAppsInfo()
+            {
+                InstalledApps = new List<InstalledAppDetails>();
+                Refresh();
+            }
+
+            public void Refresh()
+            {
+                InstalledApps.Clear();
+
+                // HKLM 64-bit
+                EnumerateUninstallKey(
+                    unchecked((UIntPtr)0x80000002), // HKEY_LOCAL_MACHINE
+                    @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"
+                );
+
+                // HKLM 32-bit
+                EnumerateUninstallKey(
+                    unchecked((UIntPtr)0x80000002),
+                    @"SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall"
+                );
+
+                // HKCU
+                EnumerateUninstallKey(
+                    unchecked((UIntPtr)0x80000001), // HKEY_CURRENT_USER
+                    @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"
+                );
+
+                Count = InstalledApps.Count;
+
+            }
+
+            private void EnumerateUninstallKey(UIntPtr rootKey, string subKeyPath)
+            {
+                IntPtr hKey;
+                if (RegOpenKeyEx((UIntPtr)rootKey, subKeyPath, 0, KEY_READ, out hKey) != 0)
+                    return;
+
+                int index = 0;
+                int result;
+                StringBuilder keyName = new StringBuilder(256);
+                int keyNameSize;
+
+                while (true)
+                {
+                    keyNameSize = 256;
+                    result = RegEnumKeyEx(hKey, index, keyName, ref keyNameSize, IntPtr.Zero, null, IntPtr.Zero, IntPtr.Zero);
+                    if (result != 0) break;
+
+                    string appKeyPath = subKeyPath + "\\" + keyName.ToString();
+                    string displayName = ReadRegistryString((UIntPtr)rootKey, appKeyPath, "DisplayName");
+                    if (string.IsNullOrEmpty(displayName))
+                    {
+                        index++;
+                        continue;
+                    }
+
+                    InstalledAppDetails app = new InstalledAppDetails();
+                    app.Name = displayName;
+                    app.Publisher = ReadRegistryString((UIntPtr)rootKey, appKeyPath, "Publisher");
+                    app.InstallLocation = ReadRegistryString((UIntPtr)rootKey, appKeyPath, "InstallLocation");
+                    app.UninstallString = ReadRegistryString((UIntPtr)rootKey, appKeyPath, "UninstallString");
+                    string rootName = rootKey == (UIntPtr)0x80000002 ? "LOCAL_MACHINE" :
+                    rootKey == (UIntPtr)0x80000001 ? "CURRENT_USER" : "UNKNOWN";
+                    app.RegistryPath = @"HKEY_" + rootName + "\\" + appKeyPath;
+
+
+                    InstalledApps.Add(app);
+                    index++;
+                }
+
+
+                RegCloseKey(hKey);
+            }
+            
+            private string ReadRegistryString(UIntPtr rootKey, string subKey, string valueName)
+            {
+                IntPtr hKey;
+                if (RegOpenKeyEx(rootKey, subKey, 0, KEY_READ, out hKey) != 0)
+                    return null;
+
+                byte[] buffer = new byte[2048];
+                uint bufferSize = (uint)buffer.Length;
+                uint type;
+                int result = RegQueryValueEx(hKey, valueName, IntPtr.Zero, out type, buffer, ref bufferSize);
+                RegCloseKey(hKey);
+
+                if (result != 0 || type != REG_SZ)
+                    return null;
+
+                return Encoding.Unicode.GetString(buffer, 0, (int)bufferSize - 2);
+            }
+
+
+
+            public class InstalledAppDetails
+            {
+                public string Name { get; set; }
+                public string InstallLocation { get; set; }
+                public string Publisher { get; set; }
+                public string UninstallString { get; set; }
+                public string RegistryPath { get; set; }
+            }
+
+
+            //API Constants and Imports
+            private const int KEY_READ = 0x20019;
+            private const uint REG_SZ = 1;
+
+            [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+            static extern int RegOpenKeyEx(UIntPtr hKey, string subkey, int ulOptions, int samDesired, out IntPtr hkResult);
+
+            [DllImport("advapi32.dll", SetLastError = true)]
+            static extern int RegCloseKey(IntPtr hKey);
+
+            [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+            static extern int RegQueryValueEx(IntPtr hKey, string valueName, IntPtr reserved, out uint type,
+                                              [Out] byte[] data, ref uint dataSize);
+
+            [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+            static extern int RegEnumKeyEx(IntPtr hKey, int index, StringBuilder lpName, ref int lpcName,
+                                           IntPtr reserved, StringBuilder lpClass, IntPtr lpcClass, IntPtr lpftLastWriteTime);
+
+
+        }
 
         public static string ComputeSHA256(string filepath)
         {	//Read in file and create SHA256 hash based on bytes read
