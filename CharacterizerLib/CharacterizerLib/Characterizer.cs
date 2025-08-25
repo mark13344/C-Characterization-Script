@@ -2261,6 +2261,181 @@ namespace CharacterizerLib
 
         }
 
+        public class USBDeviceInfo
+        {
+            public List<UsbDetails> Devices;
+            public int Count;
+
+            public USBDeviceInfo()
+            {
+                Devices = new List<UsbDetails>();
+                Refresh();
+            }
+
+            public void Refresh()
+            {
+                Devices.Clear();
+                EnumerateUsbStorDevices();
+                Count = Devices.Count;
+            }
+
+            private void EnumerateUsbStorDevices()
+            {
+                const string usbStorPath = @"SYSTEM\CurrentControlSet\Enum\USBSTOR";
+                IntPtr hKey;
+
+                if(RegOpenKeyEx(HKEY_LOCAL_MACHINE, usbStorPath, 0, KEY_READ, out hKey) != 0)
+                    return;
+
+                int index = 0;
+                StringBuilder keyName = new StringBuilder(256);
+                int keyNameLen;
+                while (true)
+                {
+                    keyNameLen = keyName.Capacity;
+                    int result = RegEnumKeyEx(hKey, index, keyName, ref keyNameLen, IntPtr.Zero, null, IntPtr.Zero, IntPtr.Zero);
+                    if (result != 0) break;
+
+                    string subKeyName = keyName.ToString();
+                    string deviceKeyPath = usbStorPath + "\\" + subKeyName;
+
+                    ProcessUsbDeviceSubkeys(deviceKeyPath, subKeyName);
+                    index++;
+                }
+
+                RegCloseKey(hKey);
+
+            }
+
+            private void ProcessUsbDeviceSubkeys(string basePath, string deviceId)
+            {
+                IntPtr hKey;
+                if (RegOpenKeyEx(HKEY_LOCAL_MACHINE, basePath, 0 , KEY_READ, out hKey) != 0)
+                    return;
+
+                int index = 0;
+                StringBuilder subKeyName = new StringBuilder(256);
+                int nameLen;
+
+                while (true)
+                {
+                    nameLen = subKeyName.Capacity;
+                    int result = RegEnumKeyEx(hKey, index, subKeyName, ref nameLen, IntPtr.Zero, null, IntPtr.Zero, IntPtr.Zero);
+                    if (result != 0) break;
+
+                    string instanceId = subKeyName.ToString();
+                    string fullPath = basePath + "\\" + instanceId;
+
+                    UsbDetails details = new UsbDetails();
+                    details.RegistryPath = fullPath;
+                    details.SerialNumber = instanceId;
+                    details.DeviceDesc = ReadRegistryString(HKEY_LOCAL_MACHINE, fullPath, "DeviceDesc");
+                    details.FriendlyName = ReadRegistryString(HKEY_LOCAL_MACHINE, fullPath, "FriendlyName");
+                    details.LastWriteTimeUtc = GetRegistryKeyLastWriteTime(HKEY_LOCAL_MACHINE, fullPath);
+
+                    string vid = null, pid = null;
+                    string[] parts = deviceId.Split('&');
+                    foreach (string part in parts)
+                    {
+                        if (part.StartsWith("VID_", StringComparison.OrdinalIgnoreCase))
+                            vid = part.Substring(4);
+                        else if (part.StartsWith("PID_", StringComparison.OrdinalIgnoreCase))
+                            pid = part.Substring(4);
+                    }
+
+                    details.VendorId = vid;
+                    details.ProductId = pid;
+
+                    Devices.Add(details);
+
+                    index++;
+
+                }
+
+                RegCloseKey(hKey);
+            }
+
+            private string ReadRegistryString(UIntPtr root, string path, string valueName)
+            {
+                IntPtr hKey;
+                if (RegOpenKeyEx(root, path, 0, KEY_READ, out hKey) != 0)
+                    return null;
+
+                byte[] buffer = new byte[2048];
+
+                uint size = (uint)buffer.Length;
+                uint type;
+
+                int result = RegQueryValueEx(hKey, valueName, IntPtr.Zero, out type, buffer, ref size);
+                RegCloseKey(hKey);
+
+                if (result != 0 || type != REG_SZ)
+                    return null;
+
+                return Encoding.Unicode.GetString(buffer, 0, (int)size - 2);
+            }
+
+
+            private DateTime? GetRegistryKeyLastWriteTime(UIntPtr root, string path){
+                IntPtr hKey;
+                if (RegOpenKeyEx(root, path, 0, KEY_READ, out hKey) != 0)
+                    return null;
+
+                long fileTime;
+                int result = RegQueryInfoKey(
+                    hKey, null, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero,
+                    IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, out fileTime);
+
+                RegCloseKey(hKey);
+
+                if (result != 0)
+                    return null;
+
+                return DateTime.FromFileTimeUtc(fileTime);
+
+            }
+            
+
+
+
+            public class UsbDetails
+            {
+                public string DeviceDesc { get; set; }
+                public string FriendlyName { get; set; }
+                public string SerialNumber { get; set; }
+                public string VendorId { get; set; }
+                public string ProductId { get; set; }
+                public string RegistryPath { get; set; }
+                public DateTime? LastWriteTimeUtc { get; set; }
+            }
+
+            //API Constants and Imports
+            private const int KEY_READ = 0x20019;
+            private const uint REG_SZ = 1;
+            private static readonly UIntPtr HKEY_LOCAL_MACHINE = (UIntPtr)0x80000002;
+
+            [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+            static extern int RegOpenKeyEx(UIntPtr hKey, string subKey, int options, int samDesired, out IntPtr phkResult);
+
+            [DllImport("advapi32.dll", SetLastError = true)]
+            static extern int RegCloseKey(IntPtr hKey);
+
+            [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+            static extern int RegEnumKeyEx(IntPtr hKey, int index, StringBuilder lpName, ref int lpcName,
+                IntPtr reserved, StringBuilder lpClass, IntPtr lpcClass, IntPtr lpftLastWriteTime);
+
+            [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+            static extern int RegQueryValueEx(IntPtr hKey, string valueName, IntPtr reserved,
+                out uint type, [Out] byte[] data, ref uint dataSize);
+
+            [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+            static extern int RegQueryInfoKey(IntPtr hKey, StringBuilder lpClass, IntPtr lpcClass,
+                IntPtr lpReserved, IntPtr lpcSubKeys, IntPtr lpcMaxSubKeyLen,
+                IntPtr lpcMaxClassLen, IntPtr lpcValues, IntPtr lpcMaxValueNameLen,
+                IntPtr lpcMaxValueLen, IntPtr lpcbSecurityDescriptor,
+                out long lpftLastWriteTime);
+        }
+
         public static string ComputeSHA256(string filepath)
         {	//Read in file and create SHA256 hash based on bytes read
             try
